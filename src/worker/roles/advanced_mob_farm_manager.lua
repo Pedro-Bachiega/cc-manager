@@ -2,6 +2,7 @@
 
 local compose = require("compose.src.compose")
 local ui = require("manager.src.common.ui")
+local network = require("manager.src.common.network")
 
 --[[--------------------------------------------------------------------------
                                 CONFIGURATION
@@ -9,7 +10,7 @@ local ui = require("manager.src.common.ui")
 
 -- How often to update the item counts (in seconds)
 local updateInterval = 5
-local controlProtocol = "worker_control"
+local controlProtocol = 54321
 
 --[[--------------------------------------------------------------------------
                                   LOGIC
@@ -128,31 +129,27 @@ local function composeAppTask()
 end
 
 local function periodicUpdateTask()
-    local modem = peripheral.find("modem", rednet.open)
-    if not modem then
-        error("No wireless modem found. Please attach one to the computer.")
-    end
+    network.open(controlProtocol)
 
     local timer = os.startTimer(updateInterval)
     while true do
-        local event, p1, p2, p3, p4 = os.pullEvent()
+        local event, p1, p2, p3, p4, p5, p6 = os.pullEvent() -- Get all events
 
         if event == "terminate" then
             compose.exit() -- Signal compose app to terminate
-            rednet.close(controlProtocol)
+            network.close(controlProtocol)
             return
         elseif event == "timer" and p1 == timer then
             if redstoneSide:get() ~= nil then
                 countItems() -- This will update the itemCounts state and trigger recomposition
             end
             timer = os.startTimer(updateInterval)
-        elseif event == "rednet_message" then
-            local senderId, message, protocol = p1, p2, p3
-            if protocol == controlProtocol then
-                if message.role == "advanced_mob_farm_manager" and message.command == "set_state" then
-                    if message.payload and message.payload.enabled ~= nil then
-                        setFarmState(message.payload.enabled)
-                    end
+        elseif event == "modem_message" then
+            local side, channel, replyChannel, message_raw, distance = p1, p2, p3, p4, p5 -- Map to user's desired names
+            local message = textutils.unserializeJSON(message_raw) -- Deserialize the message
+            if message.role == "advanced_mob_farm_manager" and message.command == "set_state" then
+                if message.payload and message.payload.enabled ~= nil then
+                    setFarmState(message.payload.enabled)
                 end
             end
         end

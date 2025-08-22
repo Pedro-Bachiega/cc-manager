@@ -2,6 +2,7 @@
 
 local compose = require("compose.src.compose")
 local protocol = require("manager.src.common.protocol")
+local network = require("manager.src.common.network")
 
 --[[--------------------------------------------------------------------------
                                 CONFIGURATION
@@ -57,10 +58,12 @@ local function handleRednetMessage(senderId, message)
 
     if msg.type == "REGISTER" then
         currentWorkers[senderId] = { id = senderId, status = "online", last_heartbeat = os.time() }
-        rednet.send(senderId, protocol.serialize({ type = "REGISTER_OK" }), protocol.name)
+        network.send(protocol.id, senderId, protocol.serialize({ type = "REGISTER_OK" }))
         local assignedRole = assignedRoles[senderId]
         if assignedRole then
-            rednet.send(senderId, protocol.serialize({ type = "TASK", name = "assign_role", script = "worker/roles/" .. assignedRole .. ".lua", params = {} }), protocol.name)
+            network.send(protocol.id, senderId,
+                protocol.serialize({ type = "TASK", name = "assign_role", script = "worker/roles/" ..
+                assignedRole .. ".lua", params = {} }))
         end
     elseif msg.type == "HEARTBEAT" then
         if currentWorkers[senderId] then
@@ -83,9 +86,12 @@ end
 local function WorkerDetails(worker, role)
     local actions = {}
     if role == "advanced_mob_farm_manager" or role == "mob_spawner_controller" then
-        table.insert(actions, compose.Button({ text = "Toggle State", onClick = function() 
-            rednet.send(worker.id, { role = role, command = "toggle_state" }, "worker_control")
-        end}))
+        table.insert(actions, compose.Button({
+            text = "Toggle State",
+            onClick = function()
+                network.send(54321, worker.id, { role = role, command = "toggle_state" })
+            end
+        }))
     end
 
     return compose.Column({}, {
@@ -105,21 +111,24 @@ local function App()
     else
         return compose.Column({ modifier = compose.Modifier:new():fillMaxSize() }, {
             compose.Text({ text = "--- Manager Control Panel ---" }),
-            compose.Text({ text = "Listening on protocol: " .. protocol.name }),
+            compose.Text({ text = "Listening on protocol: " .. protocol.id }),
             compose.Text({ text = "---------------------------" }),
             workers:get(function(w)
                 local rows = {}
                 for id, data in pairs(w) do
                     local status = data.status
                     local statusColor = colors.white
-                    
+
                     if status == "online" then
                         status = "healthy"
                     end
 
-                    if status == "healthy" then statusColor = colors.green
-                    elseif status == "timed out" then statusColor = colors.red
-                    elseif status == "idle" then statusColor = colors.yellow
+                    if status == "healthy" then
+                        statusColor = colors.green
+                    elseif status == "timed out" then
+                        statusColor = colors.red
+                    elseif status == "idle" then
+                        statusColor = colors.yellow
                     end
 
                     local roleInfo = assignedRoles[id] and (" (Role: " .. assignedRoles[id] .. ")") or ""
@@ -151,14 +160,16 @@ local function composeAppTask()
 end
 
 local function messageListenerTask()
-    local modem = peripheral.find("modem", rednet.open)
-    if not modem then
-        error("No wireless modem found. Please attach one to the computer.")
-    end
+    network.open(protocol.id) -- Open the protocol using our wrapper
 
     while true do
-        local senderId, message = rednet.receive(protocol.name)
-        handleRednetMessage(senderId, message)
+        local event, p1, p2, p3, p4, p5, p6 = os.pullEvent() -- Get all events
+        if event == "modem_message" then
+            local side, channel, replyChannel, message_raw, distance = p1, p2, p3, p4, p5 -- Map to user's desired names
+            local message = textutils.unserializeJSON(message_raw) -- Deserialize the message
+            -- No protocol check needed here
+            handleRednetMessage(replyChannel, message)
+        end
     end
 end
 
@@ -173,7 +184,9 @@ local function inputTask()
             if targetId and workers:get()[targetId] then
                 assignedRoles[targetId] = roleName
                 saveAssignedRoles()
-                rednet.send(targetId, protocol.serialize({ type = "TASK", name = "assign_role", script = "worker/roles/" .. roleName .. ".lua", params = {} }), protocol.name)
+                network.send(protocol.id, targetId,
+                    protocol.serialize({ type = "TASK", name = "assign_role", script = "worker/roles/" ..
+                    roleName .. ".lua", params = {} }))
             end
         end
     end

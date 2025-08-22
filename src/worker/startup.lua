@@ -1,8 +1,9 @@
 -- Worker startup script
 
 -- Load shared APIs using require
-local protocol = require("manager.src.protocol")
-local config = require("manager.src.config")
+local protocol = require("manager.src.common.protocol")
+local config = require("manager.src.common.config")
+local network = require("manager.src.common.network")
 
 --[[--------------------------------------------------------------------------
                                 CONFIGURATION
@@ -59,10 +60,7 @@ end
 ----------------------------------------------------------------------------]]
 
 local function registerWithManager()
-    local modem = peripheral.find("modem", rednet.open)
-    if not modem then
-        error("No wireless modem found. Please attach one to the computer.")
-    end
+    network.open(protocol.id)
 
     local savedConfig = config.load()
     if savedConfig.managerId then
@@ -72,16 +70,18 @@ local function registerWithManager()
 
     while not managerId do
         setStatus("searching for manager")
-        rednet.broadcast(protocol.serialize({ type = "REGISTER" }), protocol.name)
+        network.broadcast(protocol.id, protocol.serialize({ type = "REGISTER" }))
 
         local responseTimer = os.startTimer(registrationTimeout)
         local done = false
         while not done do
-            local event, p1, p2 = os.pullEvent()
-            if event == "rednet_message" then
-                local senderId, message = p1, p2
+            local event, p1, p2, p3, p4, p5, p6 = os.pullEvent() -- Get all events
+            if event == "modem_message" then
+                local side, channel, replyChannel, message_raw, distance = p1, p2, p3, p4, p5 -- Map to user's desired names
+                local message = textutils.unserializeJSON(message_raw) -- Deserialize the message
+                local senderId = replyChannel
                 local msg = protocol.deserialize(message)
-                if msg and msg.type == "REGISTER_OK" then
+                if msg and msg.type == "REGISTER_OK" then -- Removed protocol check
                     managerId = senderId
                     config.save({ managerId = managerId }) -- Save the manager ID
                     print("Registered with manager: " .. managerId)
@@ -107,29 +107,32 @@ setStatus("idle")
 local heartbeatTimer = os.startTimer(heartbeatRate)
 
 -- Main event loop
+-- Main event loop
 while true do
-    local event, p1, p2 = os.pullEvent()
+    local event, p1, p2, p3, p4, p5, p6 = os.pullEvent() -- Get all events
 
     if event == "terminate" then
         print("Shutting down...")
-        rednet.close(protocol.name)
+        network.close(protocol.id)
         return
 
     elseif event == "timer" and p1 == heartbeatTimer then
-        rednet.send(managerId, protocol.serialize({ type = "HEARTBEAT", status = status }), protocol.name)
+        network.send(protocol.id, managerId, protocol.serialize({ type = "HEARTBEAT", status = status }))
         heartbeatTimer = os.startTimer(heartbeatRate) -- Restart timer
 
-    elseif event == "rednet_message" then
-        local senderId, message = p1, p2
+    elseif event == "modem_message" then
+        local side, channel, replyChannel, message_raw, distance = p1, p2, p3, p4, p5 -- Map to user's desired names
+        local message = textutils.unserializeJSON(message_raw) -- Deserialize the message
+        local senderId = replyChannel
         if senderId == managerId then
             local msg = protocol.deserialize(message)
-            if msg and msg.type == "TASK" then
+            if msg and msg.type == "TASK" then -- Removed protocol check
                 local taskResult = doTask(msg)
-                rednet.send(managerId, protocol.serialize({
+                network.send(protocol.id, managerId, protocol.serialize({
                     type = "TASK_RESULT",
                     success = taskResult.success,
                     result = taskResult.result
-                }), protocol.name)
+                }))
                 setStatus("idle")
             end
         end

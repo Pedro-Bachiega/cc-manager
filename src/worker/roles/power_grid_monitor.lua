@@ -2,13 +2,14 @@
 
 local compose = require("compose.src.compose")
 local ui = require("manager.src.common.ui")
+local network = require("manager.src.common.network")
 
 --[[--------------------------------------------------------------------------
                                 CONFIGURATION
 ----------------------------------------------------------------------------]]
 
 local updateInterval = 5
-local controlProtocol = "worker_control"
+local controlProtocol = 54321
 
 --[[--------------------------------------------------------------------------
                                   LOGIC
@@ -93,13 +94,12 @@ local function composeAppTask()
 end
 
 local function messageListenerTask()
-    local modem = peripheral.find("modem", rednet.open)
-    if not modem then
-        error("No wireless modem found. Please attach one to the computer.")
-    end
+    network.open(controlProtocol)
     while true do
-        local event, senderId, message, protocol = os.pullEvent("rednet_message")
-        if protocol == controlProtocol then
+        local event, p1, p2, p3, p4, p5, p6 = os.pullEvent() -- Get all events
+        if event == "modem_message" then
+            local side, channel, replyChannel, message_raw, distance = p1, p2, p3, p4, p5 -- Map to user's desired names
+            local message = textutils.unserializeJSON(message_raw) -- Deserialize the message
             if message.role == "power_grid_monitor" then
                 if message.command == "add_machine" then
                     local machines = controlledMachines:get()
