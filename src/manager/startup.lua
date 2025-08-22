@@ -103,7 +103,7 @@ local function handleRednetMessage(senderId, message)
                     type = "TASK",
                     name = "assign_role",
                     script = "worker/roles/" ..
-                        assignedRole .. ".lua",
+                        assignedRole.name .. ".lua",
                     params = {}
                 }))
         end
@@ -126,15 +126,26 @@ end
 ----------------------------------------------------------------------------]]
 
 local function WorkerDetails(worker, role)
-    local actions = nil
-    if role and (role.name == "advanced_mob_farm_manager" or role.name == "mob_spawner_controller") then
-        actions = {}
+    local actions = {}
+    if role then -- Only show clear role if a role is assigned
         table.insert(actions, compose.Button({
-            text = "Toggle State",
+            text = "Clear Role",
             onClick = function()
-                network.send(worker.id, os.getComputerID(), { role = role.name, command = "toggle_state" })
+                network.send(worker.id, os.getComputerID(), { type = "COMMAND", command = "clear_role" })
+                assignedRoles[worker.id] = nil -- Clear role in manager's state
+                saveAssignedRoles() -- Save updated roles
+                selectedWorkerId:set(nil) -- Go back to main list
             end
         }))
+
+        if role.name == "advanced_mob_farm_manager" or role.name == "mob_spawner_controller" then
+            table.insert(actions, compose.Button({
+                text = "Toggle State",
+                onClick = function()
+                    network.send(worker.id, os.getComputerID(), { role = role.name, command = "toggle_state" })
+                end
+            }))
+        end
     end
 
     local footer = nil
@@ -142,22 +153,26 @@ local function WorkerDetails(worker, role)
         -- Conditional role assignment UI
         footer = compose.Column({}, {
             compose.Text({ text = "Assign Role:" }),
-            compose.Column({}, map(availableRoles, function(role)
+            compose.Column({}, map(availableRoles, function(roleOption)
                 return compose.Column({}, {
                     compose.Text({ text = "" }),
                     compose.Button({
-                        text = role.displayName,
+                        text = roleOption.displayName,
                         backgroundColor = colors.lightGray,
                         textColor = colors.black,
                         onClick = function()
-                            assignRoleToWorker(worker.id, role)
+                            assignRoleToWorker(worker.id, roleOption)
                         end
                     })
                 })
             end))
         })
-    elseif actions then
-        footer = compose.Row({ modifier = compose.Modifier:new():fillMaxWidth() }, actions)
+    elseif #actions > 0 then -- Only show actions row if there are actions
+        footer = compose.Column({
+            modifier = compose.Modifier:new():fillMaxWidth(),
+            verticalArrangement = compose.Arrangement.SpacedBy,
+            spacing = 1
+        }, actions)
     end
 
     return compose.Column({}, {
@@ -169,7 +184,7 @@ local function WorkerDetails(worker, role)
         }),
         compose.Text({ text = "" }),
         compose.Text({ text = "Worker " .. worker.id }),
-        compose.Text({ text = "Role: " .. (role.displayName or "N/A") }),
+        compose.Text({ text = "Role: " .. (role and role.displayName or "N/A") }),
         compose.Text({ text = "" }),
         footer
     })
@@ -240,10 +255,10 @@ local function messageListenerTask()
     network.open(protocol.id) -- Open the protocol using our wrapper
 
     while true do
-        local event, p1, p2, p3, p4, p5, p6 = os.pullEvent()                              -- Get all events
+        local event, p1, p2, p3, p4, p5, p6 = os.pullEvent() -- Get all events
         if event == "modem_message" then
             local side, channel, replyChannel, message_raw, distance = p1, p2, p3, p4, p5 -- Map to user's desired names
-            local message = textutils.unserializeJSON(message_raw)                        -- Deserialize the message
+            local message = textutils.unserializeJSON(message_raw) -- Deserialize the message
             -- No protocol check needed here
             handleRednetMessage(replyChannel, message)
         end
@@ -289,13 +304,5 @@ local function workerStatusUpdateTask()
         end
     end
 end
-
--- Load the config module from the newly cloned manager directory
-local config = require("manager.src.common.config")
-
--- Load existing config, add the role, and save
-local cfg = config.load()
-cfg.role = "manager"
-config.save(cfg)
 
 parallel.waitForAll(composeAppTask, messageListenerTask, inputTask, saveStateTask, workerStatusUpdateTask)
