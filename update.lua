@@ -1,5 +1,5 @@
 -- Load the config module
-local config = require("manager.src.common.config")
+local config = require("src.common.config")
 
 -- Load existing config and get the role
 local cfg = config.load()
@@ -17,6 +17,11 @@ local function deleteDir(path)
             fs.delete(path)
         end
     end
+end
+
+if role == "" then
+    print("Could not find the computer's role, aborting update")
+    return
 end
 
 deleteDir("manager")

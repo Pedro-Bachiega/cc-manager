@@ -99,6 +99,14 @@ local function registerWithManager()
     end
 end
 
+-- Load the config module from the newly cloned manager directory
+local config = require("manager.src.common.config")
+
+-- Load existing config, add the role, and save
+local cfg = config.load()
+cfg.role = "worker"
+config.save(cfg)
+
 -- Start registration process
 registerWithManager()
 setStatus("idle")

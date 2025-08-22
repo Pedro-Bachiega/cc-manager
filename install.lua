@@ -40,13 +40,5 @@ end
 
 fs.copy(sourceStartupPath, "startup.lua")
 
--- Load the config module from the newly cloned manager directory
-local config = require(managerTargetDir .. ".src.common.config")
-
--- Load existing config, add the role, and save
-local cfg = config.load()
-cfg.role = role
-config.save(cfg)
-
 print("Installation complete.")
 os.reboot()

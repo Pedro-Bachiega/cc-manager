@@ -4,6 +4,29 @@ local compose = require("compose.src.compose")
 local protocol = require("manager.src.common.protocol")
 local network = require("manager.src.common.network")
 
+local availableRoles = {
+    {
+        name = "advanced_mob_farm_manager",
+        displayName = "Advanced Mob Farm Manager"
+    },
+    {
+        name = "mob_spawner_controller",
+        displayName = "Mob Spawner Controller"
+    },
+    {
+        name = "power_grid_monitor",
+        displayName = "Power Grid Monitor"
+    }
+}
+
+local function map(tbl, func)
+    local newTbl = {}
+    for k, v in pairs(tbl) do
+        newTbl[k] = func(v)
+    end
+    return newTbl
+end
+
 --[[--------------------------------------------------------------------------
                                 CONFIGURATION
 ----------------------------------------------------------------------------]]
@@ -50,6 +73,21 @@ end
 local workers = compose.remember(initialWorkers, "workers", true)
 local selectedWorkerId = compose.remember(nil, "selectedWorkerId")
 
+local function assignRoleToWorker(targetId, roleName)
+    if targetId and workers:get()[targetId] then
+        assignedRoles[targetId] = roleName
+        saveAssignedRoles()
+        network.send(targetId, os.getComputerId(),
+            protocol.serialize({
+                type = "TASK",
+                name = "assign_role",
+                script = "worker/roles/" ..
+                    roleName .. ".lua",
+                params = {}
+            }))
+    end
+end
+
 local function handleRednetMessage(senderId, message)
     local msg = protocol.deserialize(message)
     if not msg or not msg.type then return end
@@ -62,8 +100,13 @@ local function handleRednetMessage(senderId, message)
         local assignedRole = assignedRoles[senderId]
         if assignedRole then
             network.send(senderId, os.getComputerId(),
-                protocol.serialize({ type = "TASK", name = "assign_role", script = "worker/roles/" ..
-                assignedRole .. ".lua", params = {} }))
+                protocol.serialize({
+                    type = "TASK",
+                    name = "assign_role",
+                    script = "worker/roles/" ..
+                        assignedRole .. ".lua",
+                    params = {}
+                }))
         end
     elseif msg.type == "HEARTBEAT" then
         if currentWorkers[senderId] then
@@ -84,8 +127,9 @@ end
 ----------------------------------------------------------------------------]]
 
 local function WorkerDetails(worker, role)
-    local actions = {}
+    local actions = nil
     if role == "advanced_mob_farm_manager" or role == "mob_spawner_controller" then
+        actions = {}
         table.insert(actions, compose.Button({
             text = "Toggle State",
             onClick = function()
@@ -94,11 +138,41 @@ local function WorkerDetails(worker, role)
         }))
     end
 
+    local footer = nil
+    if not role then
+        -- Conditional role assignment UI
+        footer = compose.Column({}, {
+            compose.Text({ text = "Assign Role:" }),
+            compose.Column({}, map(availableRoles, function(role)
+                return compose.Column({}, {
+                    compose.Text({ text = "" }),
+                    compose.Button({
+                        text = role.displayName,
+                        backgroundColor = colors.lightGray,
+                        textColor = colors.black,
+                        onClick = function()
+                            assignRoleToWorker(worker.id, role.name)
+                        end
+                    })
+                })
+            end))
+        })
+    elseif actions then
+        footer = compose.Row({ modifier = compose.Modifier:new():fillMaxWidth() }, actions)
+    end
+
     return compose.Column({}, {
+        compose.Button({
+            text = "Back",
+            backgroundColor = colors.red,
+            textColor = colors.white,
+            onClick = function() selectedWorkerId:set(nil) end
+        }),
+        compose.Text({ text = "" }),
         compose.Text({ text = "Worker " .. worker.id }),
         compose.Text({ text = "Role: " .. (role or "N/A") }),
-        compose.Row({}, actions),
-        compose.Button({ text = "Back", onClick = function() selectedWorkerId:set(nil) end })
+        compose.Text({ text = "" }),
+        footer
     })
 end
 
@@ -119,6 +193,8 @@ local function App()
             workers:get(function(w)
                 local rows = {}
                 for id, data in pairs(w) do
+                    print("Drawing worker " .. id .. " with status " .. data.status)
+
                     local status = data.status
                     local statusColor = colors.white
 
@@ -165,10 +241,10 @@ local function messageListenerTask()
     network.open(protocol.id) -- Open the protocol using our wrapper
 
     while true do
-        local event, p1, p2, p3, p4, p5, p6 = os.pullEvent() -- Get all events
+        local event, p1, p2, p3, p4, p5, p6 = os.pullEvent()                              -- Get all events
         if event == "modem_message" then
             local side, channel, replyChannel, message_raw, distance = p1, p2, p3, p4, p5 -- Map to user's desired names
-            local message = textutils.unserializeJSON(message_raw) -- Deserialize the message
+            local message = textutils.unserializeJSON(message_raw)                        -- Deserialize the message
             -- No protocol check needed here
             handleRednetMessage(replyChannel, message)
         end
@@ -183,13 +259,9 @@ local function inputTask()
 
         if parts[1] == "assign_role" and #parts == 3 then
             local targetId, roleName = tonumber(parts[2]), parts[3]
-            if targetId and workers:get()[targetId] then
-                assignedRoles[targetId] = roleName
-                saveAssignedRoles()
-                network.send(targetId, os.getComputerId(),
-                    protocol.serialize({ type = "TASK", name = "assign_role", script = "worker/roles/" ..
-                    roleName .. ".lua", params = {} }))
-            end
+            assignRoleToWorker(targetId, roleName)
+        elseif parts[1] == "update" then
+            shell.run("manager/update.lua")
         end
     end
 end
@@ -221,5 +293,13 @@ local function workerStatusUpdateTask()
         end
     end
 end
+
+-- Load the config module from the newly cloned manager directory
+local config = require("manager.src.common.config")
+
+-- Load existing config, add the role, and save
+local cfg = config.load()
+cfg.role = "manager"
+config.save(cfg)
 
 parallel.waitForAll(composeAppTask, messageListenerTask, inputTask, saveStateTask, workerStatusUpdateTask)
