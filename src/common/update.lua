@@ -14,4 +14,11 @@ end
 
 deleteDir("manager")
 
-shell.run("pastebin", "run", "QCqV74ik")
+-- Load the config module
+local config = require("manager.src.common.config")
+
+-- Load existing config and get the role
+local cfg = config.load()
+local role = cfg.role
+
+shell.run("pastebin", "run", "QCqV74ik", role)
