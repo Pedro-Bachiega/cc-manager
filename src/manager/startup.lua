@@ -73,16 +73,15 @@ end
 local workers = compose.remember(initialWorkers, "workers", true)
 local selectedWorkerId = compose.remember(nil, "selectedWorkerId")
 
-local function assignRoleToWorker(targetId, roleName)
+local function assignRoleToWorker(targetId, role)
     if targetId and workers:get()[targetId] then
-        assignedRoles[targetId] = roleName
+        assignedRoles[targetId] = role
         saveAssignedRoles()
         network.send(targetId, os.getComputerID(),
             protocol.serialize({
                 type = "TASK",
                 name = "assign_role",
-                script = "worker/roles/" ..
-                    roleName .. ".lua",
+                script = "worker/roles/" .. role.name .. ".lua",
                 params = {}
             }))
     end
@@ -128,12 +127,12 @@ end
 
 local function WorkerDetails(worker, role)
     local actions = nil
-    if role == "advanced_mob_farm_manager" or role == "mob_spawner_controller" then
+    if role and (role.name == "advanced_mob_farm_manager" or role.name == "mob_spawner_controller") then
         actions = {}
         table.insert(actions, compose.Button({
             text = "Toggle State",
             onClick = function()
-                network.send(worker.id, os.getComputerID(), { role = role, command = "toggle_state" })
+                network.send(worker.id, os.getComputerID(), { role = role.name, command = "toggle_state" })
             end
         }))
     end
@@ -151,7 +150,7 @@ local function WorkerDetails(worker, role)
                         backgroundColor = colors.lightGray,
                         textColor = colors.black,
                         onClick = function()
-                            assignRoleToWorker(worker.id, role.name)
+                            assignRoleToWorker(worker.id, role)
                         end
                     })
                 })
@@ -170,7 +169,7 @@ local function WorkerDetails(worker, role)
         }),
         compose.Text({ text = "" }),
         compose.Text({ text = "Worker " .. worker.id }),
-        compose.Text({ text = "Role: " .. (role or "N/A") }),
+        compose.Text({ text = "Role: " .. (role.displayName or "N/A") }),
         compose.Text({ text = "" }),
         footer
     })
@@ -208,12 +207,14 @@ local function App()
                         statusColor = colors.yellow
                     end
 
-                    local roleInfo = assignedRoles[id] and (" (Role: " .. assignedRoles[id] .. ")") or ""
-                    table.insert(rows, compose.Row({
+                    local roleInfo = assignedRoles[id] and ("Role: " .. assignedRoles[id].displayName) or ""
+                    table.insert(rows, compose.Column({
                         modifier = compose.Modifier:new():clickable(function() selectedWorkerId:set(id) end)
                     }, {
-                        compose.Text({ text = string.format("Worker %d: ", id) }),
-                        compose.Text({ text = status, textColor = statusColor }),
+                        compose.Row({}, {
+                            compose.Text({ text = string.format("Worker %d: ", id) }),
+                            compose.Text({ text = status, textColor = statusColor })
+                        }),
                         compose.Text({ text = roleInfo })
                     }))
                 end
@@ -255,10 +256,7 @@ local function inputTask()
         local parts = {}
         for part in command:gmatch("%S+") do table.insert(parts, part) end
 
-        if parts[1] == "assign_role" and #parts == 3 then
-            local targetId, roleName = tonumber(parts[2]), parts[3]
-            assignRoleToWorker(targetId, roleName)
-        elseif parts[1] == "update" then
+        if parts[1] == "update" then
             shell.run("manager/update.lua")
         end
     end
