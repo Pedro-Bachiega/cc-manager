@@ -1,8 +1,8 @@
 -- Worker startup script
 
 -- Load shared APIs using require
-local protocol = require("common.protocol")
-local config = require("common.config")
+local protocol = require("manager.src.protocol")
+local config = require("manager.src.config")
 
 --[[--------------------------------------------------------------------------
                                 CONFIGURATION

@@ -1,7 +1,7 @@
 -- Manager startup script
 
 local compose = require("compose.src.compose")
-local protocol = require("common.protocol")
+local protocol = require("manager.src.common.protocol")
 
 --[[--------------------------------------------------------------------------
                                 CONFIGURATION
