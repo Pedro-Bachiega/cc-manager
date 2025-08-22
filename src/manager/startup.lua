@@ -77,7 +77,7 @@ local function assignRoleToWorker(targetId, roleName)
     if targetId and workers:get()[targetId] then
         assignedRoles[targetId] = roleName
         saveAssignedRoles()
-        network.send(targetId, os.getComputerId(),
+        network.send(targetId, os.getComputerID(),
             protocol.serialize({
                 type = "TASK",
                 name = "assign_role",
@@ -96,10 +96,10 @@ local function handleRednetMessage(senderId, message)
 
     if msg.type == "REGISTER" then
         currentWorkers[senderId] = { id = senderId, status = "online", last_heartbeat = os.time() }
-        network.send(senderId, os.getComputerId(), protocol.serialize({ type = "REGISTER_OK" }))
+        network.send(senderId, os.getComputerID(), protocol.serialize({ type = "REGISTER_OK" }))
         local assignedRole = assignedRoles[senderId]
         if assignedRole then
-            network.send(senderId, os.getComputerId(),
+            network.send(senderId, os.getComputerID(),
                 protocol.serialize({
                     type = "TASK",
                     name = "assign_role",
@@ -133,7 +133,7 @@ local function WorkerDetails(worker, role)
         table.insert(actions, compose.Button({
             text = "Toggle State",
             onClick = function()
-                network.send(worker.id, os.getComputerId(), { role = role, command = "toggle_state" })
+                network.send(worker.id, os.getComputerID(), { role = role, command = "toggle_state" })
             end
         }))
     end
@@ -193,8 +193,6 @@ local function App()
             workers:get(function(w)
                 local rows = {}
                 for id, data in pairs(w) do
-                    print("Drawing worker " .. id .. " with status " .. data.status)
-
                     local status = data.status
                     local statusColor = colors.white
 

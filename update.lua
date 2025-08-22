@@ -24,6 +24,8 @@ if role == "" then
     return
 end
 
+deleteDir("compose")
 deleteDir("manager")
+fs.delete("startup.lua")
 
 shell.run("pastebin", "run", "QCqV74ik", role)
