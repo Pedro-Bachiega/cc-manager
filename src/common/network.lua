@@ -2,6 +2,7 @@
 local network = {}
 local modem = nil
 local open_channels = {}
+local protocol = require("manager.src.common.protocol") -- Added this line
 
 local function getModem()
     if not modem then
@@ -34,23 +35,8 @@ function network.send(channel, replyChannel, message)
     m.transmit(channel, replyChannel, textutils.serializeJSON(message))
 end
 
-function network.receive()
-    while true do
-        local event, side, channel, replyChannel, message, distance = os.pullEvent("modem_message")
-        if event == "modem_message" then
-            return event, side, channel, replyChannel, message, distance
-        end
-    end
+function network.broadcast(message)
+    network.send(protocol.id, os.getComputerID(), message)
 end
-
-function network.broadcast(channel, message)
-    local m = getModem()
-    m.transmit(channel, nil, textutils.serializeJSON(message)) -- nil recipientId for broadcast
-end
-
--- For receive, we will rely on os.pullEvent("modem_message")
--- The existing code uses rednet.receive, which is blocking.
--- We will need to adapt the calling code to use os.pullEvent.
--- This wrapper will not provide a direct blocking 'receive' function.
 
 return network

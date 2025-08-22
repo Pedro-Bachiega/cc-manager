@@ -50,7 +50,7 @@ local function doTask(task)
         print("Task completed.")
         return { success = true, result = result }
     else
-        print("Task failed: " .. tostring(result))
+        print("Task failed: " .. tostring(result) )
         return { success = false, result = tostring(result) }
     end
 end
@@ -70,7 +70,7 @@ local function registerWithManager()
 
     while not managerId do
         setStatus("searching for manager")
-        network.broadcast(protocol.id, protocol.serialize({ type = "REGISTER" }))
+        network.broadcast(protocol.serialize({ type = "REGISTER" }))
 
         local responseTimer = os.startTimer(registrationTimeout)
         local done = false
@@ -117,7 +117,7 @@ while true do
         return
 
     elseif event == "timer" and p1 == heartbeatTimer then
-        network.send(protocol.id, managerId, protocol.serialize({ type = "HEARTBEAT", status = status }))
+        network.send(managerId, os.getComputerID(), protocol.serialize({ type = "HEARTBEAT", status = status }))
         heartbeatTimer = os.startTimer(heartbeatRate) -- Restart timer
 
     elseif event == "modem_message" then
@@ -128,7 +128,7 @@ while true do
             local msg = protocol.deserialize(message)
             if msg and msg.type == "TASK" then -- Removed protocol check
                 local taskResult = doTask(msg)
-                network.send(protocol.id, managerId, protocol.serialize({
+                network.send(managerId, os.getComputerID(), protocol.serialize({
                     type = "TASK_RESULT",
                     success = taskResult.success,
                     result = taskResult.result

@@ -4,6 +4,7 @@ local protocol = {}
 
 -- The name of the rednet protocol to use.
 -- All computers on the network must use the same protocol name.
+protocol.name = "cc_manager_net"
 protocol.id = 12345
 
 --- Helper function to safely encode a Lua table into a JSON string.

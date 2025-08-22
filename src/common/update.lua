@@ -1,3 +1,10 @@
+-- Load the config module
+local config = require("manager.src.common.config")
+
+-- Load existing config and get the role
+local cfg = config.load()
+local role = cfg.role
+
 print("Removing old project files...")
 local function deleteDir(path)
     if fs.exists(path) then
@@ -13,12 +20,5 @@ local function deleteDir(path)
 end
 
 deleteDir("manager")
-
--- Load the config module
-local config = require("manager.src.common.config")
-
--- Load existing config and get the role
-local cfg = config.load()
-local role = cfg.role
 
 shell.run("pastebin", "run", "QCqV74ik", role)

@@ -27,7 +27,7 @@ end
 
 local function toggleSpawner()
     local newStatus = not spawnerEnabled:get()
-    setFarmState(newStatus)
+    setSpawnerState(newStatus)
 end
 
 --[[--------------------------------------------------------------------------
