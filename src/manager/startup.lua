@@ -109,15 +109,16 @@ local function App()
         local role = assignedRoles[selectedId]
         return WorkerDetails(worker, role)
     else
-        return compose.Column({ modifier = compose.Modifier:new():fillMaxSize() }, {
+        return compose.Column({
+            modifier = compose.Modifier:new():fillMaxSize(),
+            horizontalAlignment = compose.HorizontalAlignment.Center
+        }, {
             compose.Text({ text = "--- Manager Control Panel ---" }),
             compose.Text({ text = "Listening on protocol: " .. protocol.id }),
-            compose.Text({ text = "---------------------------" }),
+            compose.Text({ text = "-----------------------------" }),
             workers:get(function(w)
                 local rows = {}
                 for id, data in pairs(w) do
-                    print("Drawing worker " .. id .. " with status " .. data.status)
-
                     local status = data.status
                     local statusColor = colors.white
 
