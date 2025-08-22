@@ -128,7 +128,11 @@ local function composeAppTask()
 end
 
 local function periodicUpdateTask()
-    rednet.open(controlProtocol)
+    local modem = peripheral.find("modem", rednet.open)
+    if not modem then
+        error("No wireless modem found. Please attach one to the computer.")
+    end
+
     local timer = os.startTimer(updateInterval)
     while true do
         local event, p1, p2, p3, p4 = os.pullEvent()

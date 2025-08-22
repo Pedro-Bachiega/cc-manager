@@ -59,7 +59,10 @@ end
 ----------------------------------------------------------------------------]]
 
 local function registerWithManager()
-    rednet.open(protocol.name)
+    local modem = peripheral.find("modem", rednet.open)
+    if not modem then
+        error("No wireless modem found. Please attach one to the computer.")
+    end
 
     local savedConfig = config.load()
     if savedConfig.managerId then

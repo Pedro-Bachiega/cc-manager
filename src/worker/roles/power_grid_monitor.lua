@@ -93,7 +93,10 @@ local function composeAppTask()
 end
 
 local function messageListenerTask()
-    rednet.open(controlProtocol)
+    local modem = peripheral.find("modem", rednet.open)
+    if not modem then
+        error("No wireless modem found. Please attach one to the computer.")
+    end
     while true do
         local event, senderId, message, protocol = os.pullEvent("rednet_message")
         if protocol == controlProtocol then
