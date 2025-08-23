@@ -121,10 +121,21 @@ end
 
 local function WorkerDetails(worker, role)
     local actions = {}
+
+    table.insert(actions, compose.Button({
+        text = "Update Worker",
+        backgroundColor = colors.orange,
+        textColor = colors.white,
+        onClick = function()
+            network.send(worker.id, os.getComputerID(), { type = "COMMAND", command = "update" })
+            selectedWorkerId:set(nil) -- Go back to main list
+        end
+    }))
+
     if role then -- Only show clear role if a role is assigned
         table.insert(actions, compose.Button({
             text = "Clear Role",
-            backgroundColor = colors.lightGray,
+            backgroundColor = colors.white,
             textColor = colors.black,
             onClick = function()
                 network.send(worker.id, os.getComputerID(), { type = "COMMAND", command = "clear_role" })
@@ -156,7 +167,7 @@ local function WorkerDetails(worker, role)
                 return compose.Column({}, {
                     compose.Button({
                         text = roleOption.displayName,
-                        backgroundColor = colors.lightGray,
+                        backgroundColor = colors.white,
                         textColor = colors.black,
                         onClick = function()
                             assignRoleToWorker(worker.id, roleOption)
@@ -235,8 +246,17 @@ local function App()
                 if #rows == 0 then
                     return compose.Text({ text = "No workers connected." })
                 end
-                return compose.Column({}, rows)
-            end)
+                return compose.Column({ modifier = compose.Modifier:new():fillMaxSize() }, rows)
+            end),
+            compose.Button({
+                text = "Update Manager",
+                backgroundColor = colors.white,
+                textColor = colors.black,
+                onClick = function()
+                    print("Running update script...")
+                    shell.run("manager/update.lua")
+                end
+            })
         })
     end
 end
