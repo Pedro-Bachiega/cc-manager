@@ -2,7 +2,7 @@
 
 local compose = require("compose.src.compose")
 local ui = require("manager.src.common.ui")
-local worker_messaging = require("manager.src.common.worker_messaging")
+local workerMessaging = require("manager.src.common.workerMessaging")
 
 --[[--------------------------------------------------------------------------
                                   LOGIC
@@ -10,6 +10,7 @@ local worker_messaging = require("manager.src.common.worker_messaging")
 
 local spawnerEnabled = compose.remember(false, "spawnerEnabled", true)
 local redstoneSide = compose.remember(nil, "redstoneSide", true)
+local loadingText = compose.remember(nil, "loading")
 
 local function setSpawnerState(enabled)
     local side = redstoneSide:get()
@@ -20,8 +21,12 @@ local function setSpawnerState(enabled)
 end
 
 local function toggleSpawner()
-    local newStatus = not spawnerEnabled:get()
-    setSpawnerState(newStatus)
+    loadingText:set("Toggling spawner...")
+    parallel.waitForAll(function()
+        local newStatus = not spawnerEnabled:get()
+        setSpawnerState(newStatus)
+        loadingText:set(nil)
+    end)
 end
 
 --[[--------------------------------------------------------------------------
@@ -51,8 +56,18 @@ local function MainView()
 end
 
 local function App()
+    if loadingText:get() then
+        return compose.Column({
+            modifier = compose.Modifier:new():fillMaxSize(),
+            verticalArrangement = compose.Arrangement.SpaceAround,
+            horizontalAlignment = compose.HorizontalAlignment.Center
+        }, {
+            compose.ProgressBar({ text = loadingText:get() })
+        })
+    end
+
     if redstoneSide:get() == nil then
-        return ui.SideSelector(compose, function(side) redstoneSide:set(side) end)
+        return ui.SideSelector(function(side) redstoneSide:set(side) end)
     else
         return MainView()
     end
@@ -65,7 +80,7 @@ end
 local M = {}
 
 function M.run()
-    worker_messaging.setStatus("running mob spawner controller")
+    workerMessaging.setStatus("running mob spawner controller")
 
     -- Initial setup
     if redstoneSide:get() ~= nil then
@@ -86,7 +101,9 @@ function M.run()
     end
 
     local function messageListenerTask()
-        worker_messaging.start(messageHandler)
+        workerMessaging.start({
+            messageHandler = messageHandler
+        })
     end
 
     local tasks = {messageListenerTask}

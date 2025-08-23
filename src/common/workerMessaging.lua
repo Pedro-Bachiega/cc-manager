@@ -1,8 +1,9 @@
--- common/worker_messaging.lua
+-- common/workerMessaging.lua
 local network = require("manager.src.common.network")
 local config = require("manager.src.common.config")
 local protocol = require("manager.src.common.protocol")
 local compose = require("compose.src.compose")
+local ui = require("manager.src.common.ui")
 
 local M = {}
 
@@ -47,7 +48,10 @@ local function doTask(task)
     M.setStatus("working: " .. task.name)
     print("Executing task: " .. task.name .. " (script: " .. scriptPath .. ")")
 
-    local success, result = executeScript(scriptPath, task.params)
+    local success, result
+    ui.withLoading("Executing " .. task.name, function()
+        success, result = executeScript(scriptPath, task.params)
+    end)
 
     if success then
         print("Task completed.")

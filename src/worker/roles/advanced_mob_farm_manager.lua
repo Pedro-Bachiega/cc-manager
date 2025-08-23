@@ -2,7 +2,7 @@
 
 local compose = require("compose.src.compose")
 local ui = require("manager.src.common.ui")
-local worker_messaging = require("manager.src.common.worker_messaging")
+local workerMessaging = require("manager.src.common.workerMessaging")
 
 --[[--------------------------------------------------------------------------
                                 CONFIGURATION
@@ -19,6 +19,7 @@ local itemCounts = compose.remember({}, "itemCounts", true)
 local chosenContainer = compose.remember(nil, "chosenContainer", true)
 local farmEnabled = compose.remember(false, "farmEnabled", true)
 local redstoneSide = compose.remember(nil, "redstoneSide", true)
+local loadingText = compose.remember(nil, "loading")
 
 local term = peripheral.find("monitor") or term
 
@@ -40,8 +41,12 @@ local function setFarmState(enabled)
 end
 
 local function toggleFarm()
-    local newStatus = not farmEnabled:get()
-    setFarmState(newStatus)
+    loadingText:set("Toggling farm...")
+    parallel.waitForAll(function()
+        local newStatus = not farmEnabled:get()
+        setFarmState(newStatus)
+        loadingText:set(nil)
+    end)
 end
 
 local function countItems()
@@ -113,8 +118,18 @@ local function MainView()
 end
 
 local function App()
+    if loadingText:get() then
+        return compose.Column({
+            modifier = compose.Modifier:new():fillMaxSize(),
+            verticalArrangement = compose.Arrangement.SpaceAround,
+            horizontalAlignment = compose.HorizontalAlignment.Center
+        }, {
+            compose.ProgressBar({ text = loadingText:get() })
+        })
+    end
+
     if redstoneSide:get() == nil then
-        return ui.SideSelector(compose, function(side) redstoneSide:set(side) end)
+        return ui.SideSelector(function(side) redstoneSide:set(side) end)
     else
         return MainView()
     end
@@ -127,7 +142,7 @@ end
 local M = {}
 
 function M.run()
-    worker_messaging.setStatus("running advanced mob farm manager")
+    workerMessaging.setStatus("running advanced mob farm manager")
     askForContainerName()
 
     -- Initial setup
@@ -150,7 +165,7 @@ function M.run()
     end
 
     local function messageListenerTask()
-        worker_messaging.start({
+        workerMessaging.start({
             messageHandler = messageHandler,
             periodicTask = countItems,
             taskInterval = updateInterval

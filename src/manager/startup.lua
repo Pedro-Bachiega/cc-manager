@@ -1,8 +1,9 @@
 -- Manager startup script
 
 local compose = require("compose.src.compose")
-local protocol = require("manager.src.common.protocol")
+local coroutineUtils = require("manager.src.common.coroutineUtils")
 local network = require("manager.src.common.network")
+local protocol = require("manager.src.common.protocol")
 
 local availableRoles = {
     {
@@ -44,6 +45,12 @@ local disconnectTimeout = 15
 ----------------------------------------------------------------------------]]
 
 local assignedRoles = {}
+local taskQueue = {}
+
+local function addTask(task)
+    table.insert(taskQueue, task)
+end
+
 local function saveAssignedRoles()
     local file = fs.open(assignedRolesFile, "w")
     if file then
@@ -72,14 +79,16 @@ end
 
 local workers = compose.remember(initialWorkers, "workers", true)
 local selectedWorkerId = compose.remember(nil, "selectedWorkerId")
+local loadingText = compose.remember(nil, "loading", true)
+if loadingText:get() then loadingText:set(nil) end
 
 local function assignRoleToWorker(targetId, role)
     if targetId and workers:get()[targetId] then
         assignedRoles[targetId] = role
         saveAssignedRoles()
         network.send(targetId, os.getComputerID(), {
-            type = "SET_ROLE", -- Changed from "TASK" to "SET_ROLE"
-            role = role -- Pass the entire role object
+            type = "SET_ROLE",
+            role = role
         })
     end
 end
@@ -95,11 +104,10 @@ local function handleRednetMessage(senderId, message)
         network.send(senderId, os.getComputerID(), protocol.serialize({ type = "REGISTER_OK" }))
         local assignedRole = assignedRoles[senderId]
         if assignedRole then
-            network.send(senderId, os.getComputerID(),
-                protocol.serialize({
-                    type = "SET_ROLE", -- Changed from "TASK" to "SET_ROLE"
-                    role = assignedRole -- Pass the entire role object
-                }))
+            network.send(senderId, os.getComputerID(), {
+                type = "SET_ROLE",
+                role = assignedRole
+            })
         end
     elseif msg.type == "HEARTBEAT" then
         if currentWorkers[senderId] then
@@ -124,24 +132,31 @@ local function WorkerDetails(worker, role)
 
     table.insert(actions, compose.Button({
         text = "Update Worker",
-        backgroundColor = colors.orange,
-        textColor = colors.white,
         onClick = function()
-            network.send(worker.id, os.getComputerID(), { type = "COMMAND", command = "update" })
-            selectedWorkerId:set(nil) -- Go back to main list
+            loadingText:set("Updating worker...")
+            addTask(function()
+                network.send(worker.id, os.getComputerID(), { type = "COMMAND", command = "update" })
+                coroutineUtils.delay(1)
+                loadingText:set(nil)
+                selectedWorkerId:set(nil)
+            end)
         end
     }))
+
+    local footer = nil
 
     if role then -- Only show clear role if a role is assigned
         table.insert(actions, compose.Button({
             text = "Clear Role",
-            backgroundColor = colors.white,
-            textColor = colors.black,
             onClick = function()
-                network.send(worker.id, os.getComputerID(), { type = "COMMAND", command = "clear_role" })
-                assignedRoles[worker.id] = nil -- Clear role in manager's state
-                saveAssignedRoles() -- Save updated roles
-                selectedWorkerId:set(nil) -- Go back to main list
+                loadingText:set("Clearing role...")
+                addTask(function()
+                    network.send(worker.id, os.getComputerID(), { type = "COMMAND", command = "clear_role" })
+                    assignedRoles[worker.id] = nil
+                    saveAssignedRoles()
+                    loadingText:set(nil)
+                    selectedWorkerId:set(nil)
+                end)
             end
         }))
 
@@ -149,14 +164,22 @@ local function WorkerDetails(worker, role)
             table.insert(actions, compose.Button({
                 text = "Toggle State",
                 onClick = function()
-                    network.send(worker.id, os.getComputerID(), { role = role.name, command = "toggle_state" })
+                    loadingText:set("Toggling state...")
+                    addTask(function()
+                        network.send(worker.id, os.getComputerID(), { role = role.name, command = "toggle_state" })
+                        coroutineUtils.delay(1)
+                        loadingText:set(nil)
+                    end)
                 end
             }))
         end
-    end
 
-    local footer = nil
-    if not role then
+        footer = compose.Column({
+            modifier = compose.Modifier:new():fillMaxWidth(),
+            verticalArrangement = compose.Arrangement.SpacedBy,
+            spacing = 1
+        }, actions)
+    else
         -- Conditional role assignment UI
         footer = compose.Column({}, {
             compose.Text({ text = "Assign Role:" }),
@@ -167,25 +190,22 @@ local function WorkerDetails(worker, role)
                 return compose.Column({}, {
                     compose.Button({
                         text = roleOption.displayName,
-                        backgroundColor = colors.white,
-                        textColor = colors.black,
                         onClick = function()
-                            assignRoleToWorker(worker.id, roleOption)
-                            selectedWorkerId:set(nil)
+                            loadingText:set("Assigning role...")
+                            addTask(function()
+                                assignRoleToWorker(worker.id, roleOption)
+                                coroutineUtils.delay(2)
+                                loadingText:set(nil)
+                                selectedWorkerId:set(nil)
+                            end)
                         end
                     })
                 })
             end))
         })
-    elseif #actions > 0 then -- Only show actions row if there are actions
-        footer = compose.Column({
-            modifier = compose.Modifier:new():fillMaxWidth(),
-            verticalArrangement = compose.Arrangement.SpacedBy,
-            spacing = 1
-        }, actions)
     end
 
-    return compose.Column({}, {
+    return compose.Column({ modifier = compose.Modifier:new():fillMaxSize() }, {
         compose.Button({
             text = "Back",
             backgroundColor = colors.red,
@@ -201,6 +221,16 @@ local function WorkerDetails(worker, role)
 end
 
 local function App()
+    if loadingText:get() then
+        return compose.Column({
+            modifier = compose.Modifier:new():fillMaxSize(),
+            verticalArrangement = compose.Arrangement.SpaceAround,
+            horizontalAlignment = compose.HorizontalAlignment.Center
+        }, {
+            compose.ProgressBar({ text = loadingText:get() })
+        })
+    end
+
     local selectedId = selectedWorkerId:get()
     if selectedId then
         local worker = workers:get()[selectedId]
@@ -246,16 +276,29 @@ local function App()
                 if #rows == 0 then
                     return compose.Text({ text = "No workers connected." })
                 end
-                return compose.Column({ modifier = compose.Modifier:new():fillMaxSize() }, rows)
+                return compose.Column({ modifier = compose.Modifier:new():weight(1) }, rows)
             end),
-            compose.Button({
-                text = "Update Manager",
-                backgroundColor = colors.white,
-                textColor = colors.black,
-                onClick = function()
-                    print("Running update script...")
-                    shell.run("manager/update.lua")
-                end
+            compose.Row({ modifier = compose.Modifier:new():fillMaxWidth() }, {
+                compose.Button({
+                    text = "Test Loading",
+                    onClick = function()
+                        addTask(function()
+                            loadingText:set("Loading...")
+                            coroutineUtils.delay(2)
+                            loadingText:set(nil)
+                        end)
+                    end
+                }),
+                compose.Text({ modifier = compose.Modifier:new():weight(1), text = "" }),
+                compose.Button({
+                    text = "Update Manager",
+                    onClick = function()
+                        addTask(function()
+                            loadingText:set("Updating manager...")
+                            shell.run("manager/update.lua")
+                        end)
+                    end
+                })
             })
         })
     end
@@ -274,10 +317,10 @@ local function messageListenerTask()
     network.open(protocol.id) -- Open the protocol using our wrapper
 
     while true do
-        local event, p1, p2, p3, p4, p5, p6 = os.pullEvent() -- Get all events
+        local event, p1, p2, p3, p4, p5, p6 = os.pullEvent()                              -- Get all events
         if event == "modem_message" then
             local side, channel, replyChannel, message_raw, distance = p1, p2, p3, p4, p5 -- Map to user's desired names
-            local message = textutils.unserializeJSON(message_raw) -- Deserialize the message
+            local message = textutils.unserializeJSON(message_raw)                        -- Deserialize the message
             -- No protocol check needed here
             handleRednetMessage(replyChannel, message)
         end
@@ -324,4 +367,19 @@ local function workerStatusUpdateTask()
     end
 end
 
-parallel.waitForAll(composeAppTask, messageListenerTask, inputTask, saveStateTask, workerStatusUpdateTask)
+local function taskWorker()
+    while true do
+        if #taskQueue > 0 then
+            local task = table.remove(taskQueue, 1)
+            local co = coroutine.create(task)
+            local ok, err = coroutine.resume(co)
+            if not ok then
+                printError("Task error: " .. tostring(err))
+            end
+        end
+        os.sleep(0.1) -- Prevent busy-waiting
+    end
+end
+
+parallel.waitForAll(composeAppTask, messageListenerTask, inputTask, saveStateTask, workerStatusUpdateTask, taskWorker,
+coroutineUtils.coroutineScheduler)

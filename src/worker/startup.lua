@@ -5,7 +5,7 @@ local compose = require("compose.src.compose")
 local protocol = require("manager.src.common.protocol")
 local config = require("manager.src.common.config")
 local network = require("manager.src.common.network")
-local worker_messaging = require("manager.src.common.worker_messaging")
+local workerMessaging = require("manager.src.common.workerMessaging")
 
 --[[--------------------------------------------------------------------------
                                 INITIALIZATION
@@ -29,7 +29,7 @@ local function registerWithManager()
     end
 
     while not managerId do
-        worker_messaging.setStatus("searching for manager")
+        workerMessaging.setStatus("searching for manager")
         network.broadcast(protocol.serialize({ type = "REGISTER" }))
 
         local responseTimer = os.startTimer(registrationTimeout)
@@ -55,11 +55,11 @@ local function registerWithManager()
         end
 
         if not managerId then
-            worker_messaging.setStatus("manager not found")
+            workerMessaging.setStatus("manager not found")
             os.sleep(10) -- Wait before retrying
         end
     end
-    worker_messaging.setManagerId(managerId)
+    workerMessaging.setManagerId(managerId)
 end
 
 -- Load the config module from the newly cloned manager directory
@@ -74,7 +74,7 @@ if cfg.secondaryRole and cfg.secondaryRole.name then
     local roleScriptPath = "manager/src/worker/roles/" .. cfg.secondaryRole.name .. ".lua"
     if fs.exists(roleScriptPath) then
         -- The role script is now responsible for the main loop.
-        -- It should call worker_messaging.start() itself.
+        -- It should call workerMessaging.start() itself.
         local requirePath = (roleScriptPath):gsub(".lua", ""):gsub("/", ".")
         local role_module = require(requirePath)
         if role_module and role_module.run then
@@ -93,10 +93,10 @@ if cfg.secondaryRole and cfg.secondaryRole.name then
 end
 
 -- Default behavior if no role is assigned or role script finishes
-worker_messaging.setStatus("idle")
+workerMessaging.setStatus("idle")
 
 local function WorkerStatusApp()
-    local status = worker_messaging.getStatus()
+    local status = workerMessaging.getStatus()
     return compose.Column({
         modifier = compose.Modifier:new():fillMaxSize(),
         horizontalAlignment = compose.HorizontalAlignment.Center,
@@ -104,7 +104,7 @@ local function WorkerStatusApp()
     }, {
         compose.Text({ text = "--- Worker Computer ---" }),
         compose.Text({ text = "ID: " .. os.getComputerID() }),
-        compose.Text({ text = "Manager: " .. (worker_messaging.getManagerId() or "N/A") }),
+        compose.Text({ text = "Manager: " .. (workerMessaging.getManagerId() or "N/A") }),
         compose.Text({ text = "Status: " .. status:get() })
     })
 end
@@ -115,7 +115,7 @@ local function composeAppTask()
 end
 
 local function messageListenerTask()
-    worker_messaging.start()
+    workerMessaging.start()
 end
 
 local tasks = {messageListenerTask}
