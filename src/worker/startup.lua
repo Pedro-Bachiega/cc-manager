@@ -1,6 +1,7 @@
 -- Worker startup script
 
 -- Load shared APIs using require
+local compose = require("compose.src.compose")
 local protocol = require("manager.src.common.protocol")
 local config = require("manager.src.common.config")
 local network = require("manager.src.common.network")
@@ -18,16 +19,11 @@ local registrationTimeout = 5
                                 INITIALIZATION
 ----------------------------------------------------------------------------]]
 
-local status = "booting"
+local status = compose.remember("booting", "workerStatus")
 local managerId = nil
 
 local function setStatus(newStatus)
-    status = newStatus
-    term.clear()
-    term.setCursorPos(1, 1)
-    print("--- Worker Computer ---")
-    print("Registered with Manager: " .. tostring(managerId))
-    print("Status: " .. status)
+    status:set(newStatus)
 end
 
 local function doTask(task)
@@ -79,8 +75,10 @@ local function registerWithManager()
             if event == "modem_message" then
                 local side, channel, replyChannel, message_raw, distance = p1, p2, p3, p4, p5 -- Map to user's desired names
                 local message = textutils.unserializeJSON(message_raw) -- Deserialize the message
-                if message and message.type == "REGISTER_OK" then -- Removed protocol check
-                    managerId = replyChannel
+                local senderId = replyChannel
+                local msg = message -- message is already deserialized
+                if msg and msg.type == "REGISTER_OK" then -- Removed protocol check
+                    managerId = senderId
                     config.save({ managerId = managerId }) -- Save the manager ID
                     print("Registered with manager: " .. managerId)
                     done = true
@@ -98,57 +96,103 @@ local function registerWithManager()
 end
 
 -- Load the config module from the newly cloned manager directory
-local config = require("manager.src.common.config")
-
--- Load existing config, add the role, and save
 local cfg = config.load()
-cfg.role = "worker"
-config.save(cfg)
 
 -- Start registration process
 registerWithManager()
+
+-- Load and execute persistent role on startup
+if cfg.role then
+    print("Loading persistent role: " .. cfg.role.displayName)
+    local task = {
+        name = "assign_role",
+        script = "worker/roles/" .. cfg.role.name .. ".lua",
+        params = {}
+    }
+    doTask(task)
+end
+
 setStatus("idle")
 
--- Start heartbeat timer
-local heartbeatTimer = os.startTimer(heartbeatRate)
+local function messageListenerTask()
+    -- Start heartbeat timer
+    local heartbeatTimer = os.startTimer(heartbeatRate)
 
--- Open for messages
-network.open(os.getComputerID())
+    -- Open for messages
+    network.open(os.getComputerID())
 
--- Main event loop
-while true do
-    local event, p1, p2, p3, p4, p5 = os.pullEvent() -- Get all events
+    -- Main event loop
+    while true do
+        local event, p1, p2, p3, p4, p5, p6 = os.pullEvent() -- Get all events
 
-    if event == "terminate" then
-        print("Shutting down...")
-        network.close(protocol.id)
-        return
+        if event == "terminate" then
+            print("Shutting down...")
+            network.close(protocol.id)
+            return
 
-    elseif event == "timer" and p1 == heartbeatTimer then
-        network.send(managerId, os.getComputerID(), protocol.serialize({ type = "HEARTBEAT", status = status }))
-        heartbeatTimer = os.startTimer(heartbeatRate) -- Restart timer
+        elseif event == "timer" and p1 == heartbeatTimer then
+            network.send(managerId, os.getComputerID(), protocol.serialize({ type = "HEARTBEAT", status = status:get() }))
+            heartbeatTimer = os.startTimer(heartbeatRate) -- Restart timer
 
-    elseif event == "modem_message" then
-        local side, channel, replyChannel, message_raw, distance = p1, p2, p3, p4, p5
-        local message = textutils.unserializeJSON(message_raw)
-
-        print("Received message: " .. message)
-
-        if replyChannel == managerId then
-            if message and message.type == "TASK" then
-                local taskResult = doTask(message)
-                network.send(managerId, os.getComputerID(), protocol.serialize({
-                    type = "TASK_RESULT",
-                    success = taskResult.success,
-                    result = taskResult.result
-                }))
-                setStatus("idle")
-            elseif message and message.type == "COMMAND" and message.command == "clear_role" then
-                cfg.role = nil
-                config.save(cfg)
-                setStatus("idle")
-                print("Role cleared by manager.")
+        elseif event == "modem_message" then
+            local side, channel, replyChannel, message_raw, distance = p1, p2, p3, p4, p5 -- Map to user's desired names
+            local message = textutils.unserializeJSON(message_raw) -- Deserialize the message
+            local senderId = replyChannel
+            if senderId == managerId then
+                local msg = message -- message is already deserialized
+                if msg and msg.type == "TASK" then -- Removed protocol check
+                    local taskResult = doTask(msg)
+                    network.send(managerId, os.getComputerID(), protocol.serialize({
+                        type = "TASK_RESULT",
+                        success = taskResult.success,
+                        result = taskResult.result
+                    }))
+                    setStatus("idle")
+                elseif msg and msg.type == "COMMAND" and msg.command == "clear_role" then
+                    cfg.role = nil
+                    config.save(cfg)
+                    setStatus("idle")
+                    print("Role cleared by manager.")
+                elseif msg and msg.type == "SET_ROLE" then
+                    cfg.role = msg.role -- Update the role in config
+                    config.save(cfg)
+                    print("Role updated to: " .. msg.role.displayName)
+                    local task = {
+                        name = "assign_role",
+                        script = "worker/roles/" .. msg.role.name .. ".lua",
+                        params = {}
+                    }
+                    doTask(task)
+                    setStatus("working: " .. msg.role.displayName)
+                end
             end
         end
     end
 end
+
+local function WorkerStatusApp()
+    return compose.Column({
+        modifier = compose.Modifier:new():fillMaxSize(),
+        horizontalAlignment = compose.HorizontalAlignment.Center,
+        verticalArrangement = compose.Arrangement.Center
+    }, {
+        compose.Text({ text = "--- Worker Computer ---" }),
+        compose.Text({ text = "ID: " .. os.getComputerID() }),
+        compose.Text({ text = "Manager: " .. (managerId or "N/A") }),
+        compose.Text({ text = "Status: " .. status:get() })
+    })
+end
+
+local function composeAppTask()
+    local monitor = peripheral.find("monitor") or error("No monitor found", 0)
+    compose.render(WorkerStatusApp, monitor)
+end
+
+local tasks = {messageListenerTask}
+
+local monitor = peripheral.find("monitor")
+if monitor then
+    table.insert(tasks, composeAppTask)
+end
+
+parallel.waitForAll(unpack(tasks))
