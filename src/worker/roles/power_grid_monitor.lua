@@ -1,15 +1,13 @@
 -- Power Grid Monitor Role
 
 local compose = require("compose.src.compose")
-local ui = require("manager.src.common.ui")
-local network = require("manager.src.common.network")
+local worker_messaging = require("manager.src.common.worker_messaging")
 
 --[[--------------------------------------------------------------------------
                                 CONFIGURATION
 ----------------------------------------------------------------------------]]
 
 local updateInterval = 5
-local controlProtocol = 54321
 
 --[[--------------------------------------------------------------------------
                                   LOGIC
@@ -29,10 +27,12 @@ local function askForEnergyCellName()
     end
 end
 
-askForEnergyCellName()
-
 local function getPowerLevel()
-    local cell = peripheral.wrap(energyCellName:get())
+    local cellName = energyCellName:get()
+    if not cellName then
+        return
+    end
+    local cell = peripheral.wrap(cellName)
     if cell and cell.getEnergy and cell.getMaxEnergy then
         local current = cell.getEnergy()
         local max = cell.getMaxEnergy()
@@ -40,7 +40,7 @@ local function getPowerLevel()
             powerLevel:set(current / max)
         end
     else
-        print("Error: Could not find a valid Powah energy cell named '" .. energyCellName:get() .. "'")
+        print("Error: Could not find a valid Powah energy cell named '" .. cellName .. "'")
     end
 end
 
@@ -88,62 +88,53 @@ end
                                   MAIN LOOP
 ----------------------------------------------------------------------------]]
 
-local function composeAppTask()
-    local monitor = peripheral.find("monitor") or error("No monitor found", 0)
-    compose.render(MainView, monitor)
-end
+local M = {}
 
-local function messageListenerTask()
-    network.open(controlProtocol)
-    while true do
-        local event, p1, p2, p3, p4, p5, p6 = os.pullEvent() -- Get all events
-        if event == "modem_message" then
-            local side, channel, replyChannel, message_raw, distance = p1, p2, p3, p4, p5 -- Map to user's desired names
-            local message = textutils.unserializeJSON(message_raw) -- Deserialize the message
-            if message.role == "power_grid_monitor" then
-                if message.command == "add_machine" then
-                    local machines = controlledMachines:get()
-                    machines[message.payload.side] = {
-                        machine_name = message.payload.name,
-                        enabled = true
-                    }
-                    controlledMachines:set(machines)
-                elseif message.command == "remove_machine" then
-                    local machines = controlledMachines:get()
-                    machines[message.payload.side] = nil
-                    controlledMachines:set(machines)
-                elseif message.command == "set_machine_state" then
-                    setMachineState(message.payload.side, message.payload.enabled)
-                end
-            end
-        end
-    end
-end
+function M.run()
+    worker_messaging.setStatus("running power grid monitor")
+    askForEnergyCellName()
 
-local function periodicUpdateTask()
-    local timer = os.startTimer(updateInterval)
-    while true do
-        local event, p1 = os.pullEvent("timer")
-        if p1 == timer then
-            getPowerLevel()
-            timer = os.startTimer(updateInterval)
-        end
-    end
-end
-
-local S = {}
-
-function S.execute()
     -- Initial setup
     getPowerLevel()
 
+    local function composeAppTask()
+        local monitor = peripheral.find("monitor") or error("No monitor found", 0)
+        compose.render(MainView, monitor)
+    end
+
+    local function messageHandler(message)
+        if message.role == "power_grid_monitor" then
+            if message.command == "add_machine" then
+                local machines = controlledMachines:get()
+                machines[message.payload.side] = {
+                    machine_name = message.payload.name,
+                    enabled = true
+                }
+                controlledMachines:set(machines)
+            elseif message.command == "remove_machine" then
+                local machines = controlledMachines:get()
+                machines[message.payload.side] = nil
+                controlledMachines:set(machines)
+            elseif message.command == "set_machine_state" then
+                setMachineState(message.payload.side, message.payload.enabled)
+            end
+        end
+    end
+
+    local function messageListenerTask()
+        worker_messaging.start({
+            messageHandler = messageHandler,
+            periodicTask = getPowerLevel,
+            taskInterval = updateInterval
+        })
+    end
+
     local monitor = peripheral.find("monitor")
     if monitor then
-        parallel.waitForAll(composeAppTask, messageListenerTask, periodicUpdateTask)
+        parallel.waitForAll(composeAppTask, messageListenerTask)
     else
-        -- No monitor attached, just listen for messages and update power level
-        parallel.waitForAll(messageListenerTask, periodicUpdateTask)
+        messageListenerTask()
     end
 end
 
-return S
+return M

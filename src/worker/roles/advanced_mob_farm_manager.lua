@@ -2,7 +2,7 @@
 
 local compose = require("compose.src.compose")
 local ui = require("manager.src.common.ui")
-local network = require("manager.src.common.network")
+local worker_messaging = require("manager.src.common.worker_messaging")
 
 --[[--------------------------------------------------------------------------
                                 CONFIGURATION
@@ -10,7 +10,6 @@ local network = require("manager.src.common.network")
 
 -- How often to update the item counts (in seconds)
 local updateInterval = 5
-local controlProtocol = 54321
 
 --[[--------------------------------------------------------------------------
                                   LOGIC
@@ -32,8 +31,6 @@ local function askForContainerName()
     end
 end
 
-askForContainerName()
-
 local function setFarmState(enabled)
     local side = redstoneSide:get()
     if side then
@@ -48,13 +45,17 @@ local function toggleFarm()
 end
 
 local function countItems()
-    local peripheral = peripheral.wrap(chosenContainer:get())
-    if not peripheral or not peripheral.list then
-        print("Error: Could not find a valid inventory peripheral named '" .. chosenContainer:get() .. "'")
+    local peripheralName = chosenContainer:get()
+    if not peripheralName then
+        return
+    end
+    local p = peripheral.wrap(peripheralName)
+    if not p or not p.list then
+        print("Error: Could not find a valid inventory peripheral named '" .. peripheralName .. "'")
         return
     end
 
-    local items = peripheral.list()
+    local items = p.list()
     local newCounts = {}
     for slot, item in pairs(items) do
         if item then
@@ -97,7 +98,7 @@ local function MainView()
                 for name, count in pairs(currentItems) do
                     table.insert(rows, compose.Row({}, {
                         compose.Text({ text = name }),
-                        compose.Text({ text = count })
+                        compose.Text({ text = tostring(count) })
                     }))
                 end
                 return compose.Column({}, rows)
@@ -123,50 +124,40 @@ end
                                   MAIN LOOP
 ----------------------------------------------------------------------------]]
 
-local function composeAppTask()
-    local monitor = peripheral.find("monitor") or error("No monitor found", 0)
-    compose.render(App, monitor)
-end
+local M = {}
 
-local function periodicUpdateTask()
-    network.open(controlProtocol)
+function M.run()
+    worker_messaging.setStatus("running advanced mob farm manager")
+    askForContainerName()
 
-    local timer = os.startTimer(updateInterval)
-    while true do
-        local event, p1, p2, p3, p4, p5, p6 = os.pullEvent() -- Get all events
-
-        if event == "terminate" then
-            compose.exit() -- Signal compose app to terminate
-            network.close(controlProtocol)
-            return
-        elseif event == "timer" and p1 == timer then
-            if redstoneSide:get() ~= nil then
-                countItems() -- This will update the itemCounts state and trigger recomposition
-            end
-            timer = os.startTimer(updateInterval)
-        elseif event == "modem_message" then
-            local side, channel, replyChannel, message_raw, distance = p1, p2, p3, p4, p5 -- Map to user's desired names
-            local message = textutils.unserializeJSON(message_raw) -- Deserialize the message
-            if message.role == "advanced_mob_farm_manager" and message.command == "set_state" then
-                if message.payload and message.payload.enabled ~= nil then
-                    setFarmState(message.payload.enabled)
-                end
-            end
-        end
-    end
-end
-
-local S = {}
-
-function S.execute()
     -- Initial setup
     if redstoneSide:get() ~= nil then
         setFarmState(farmEnabled:get())
         countItems()
     end
 
-    -- Run both tasks in parallel
-    parallel.waitForAll(composeAppTask, periodicUpdateTask)
+    local function composeAppTask()
+        local monitor = peripheral.find("monitor") or error("No monitor found", 0)
+        compose.render(App, monitor)
+    end
+
+    local function messageHandler(message)
+        if message.role == "advanced_mob_farm_manager" and message.command == "set_state" then
+            if message.payload and message.payload.enabled ~= nil then
+                setFarmState(message.payload.enabled)
+            end
+        end
+    end
+
+    local function messageListenerTask()
+        worker_messaging.start({
+            messageHandler = messageHandler,
+            periodicTask = countItems,
+            taskInterval = updateInterval
+        })
+    end
+
+    parallel.waitForAll(composeAppTask, messageListenerTask)
 end
 
-return S
+return M

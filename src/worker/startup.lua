@@ -5,59 +5,15 @@ local compose = require("compose.src.compose")
 local protocol = require("manager.src.common.protocol")
 local config = require("manager.src.common.config")
 local network = require("manager.src.common.network")
-
---[[--------------------------------------------------------------------------
-                                CONFIGURATION
-----------------------------------------------------------------------------]]
-
--- How often to send a heartbeat to the manager (in seconds)
-local heartbeatRate = 10
--- How long to wait for a manager to respond to registration (in seconds)
-local registrationTimeout = 5
+local worker_messaging = require("manager.src.common.worker_messaging")
 
 --[[--------------------------------------------------------------------------
                                 INITIALIZATION
 ----------------------------------------------------------------------------]]
 
-local status = compose.remember("booting", "workerStatus")
+-- How long to wait for a manager to respond to registration (in seconds)
+local registrationTimeout = 5
 local managerId = nil
-
-local function setStatus(newStatus)
-    status:set(newStatus)
-end
-
-local function executeScript(scriptPath, params)
-    local requirePath = (scriptPath):gsub(".lua", ""):gsub("/", ".")
-    local script = require(requirePath)
-    local success, result = pcall(function() script.execute(unpack(params or {})) end)
-    return success, result
-end
-
-local function doTask(task)
-    local scriptPath = task.script and "manager/src/" .. task.script or nil
-
-    if not scriptPath then
-        print("Error: Task received without a script path.")
-        setStatus("idle")
-        return { success = false, result = "No script path provided." }
-    elseif not fs.exists(scriptPath) then
-        print("Error: Script not found at " .. scriptPath)
-        return { success = false, result = "Script not found." }
-    end
-
-    setStatus("working: " .. task.name)
-    print("Executing task: " .. task.name .. " (script: " .. scriptPath .. ")")
-
-    local success, result = executeScript(scriptPath, task.params)
-
-    if success then
-        print("Task completed.")
-        return { success = true, result = result }
-    else
-        print("Task failed: " .. tostring(result) )
-        return { success = false, result = tostring(result) }
-    end
-end
 
 --[[--------------------------------------------------------------------------
                                   MAIN LOGIC
@@ -73,7 +29,7 @@ local function registerWithManager()
     end
 
     while not managerId do
-        setStatus("searching for manager")
+        worker_messaging.setStatus("searching for manager")
         network.broadcast(protocol.serialize({ type = "REGISTER" }))
 
         local responseTimer = os.startTimer(registrationTimeout)
@@ -87,7 +43,9 @@ local function registerWithManager()
                 local msg = message -- message is already deserialized
                 if msg and msg.type == "REGISTER_OK" then -- Removed protocol check
                     managerId = senderId
-                    config.save({ managerId = managerId }) -- Save the manager ID
+                    local current_config = config.load()
+                    current_config.managerId = managerId
+                    config.save(current_config) -- Save the manager ID
                     print("Registered with manager: " .. managerId)
                     done = true
                 end
@@ -97,10 +55,11 @@ local function registerWithManager()
         end
 
         if not managerId then
-            setStatus("manager not found")
+            worker_messaging.setStatus("manager not found")
             os.sleep(10) -- Wait before retrying
         end
     end
+    worker_messaging.setManagerId(managerId)
 end
 
 -- Load the config module from the newly cloned manager directory
@@ -110,74 +69,34 @@ local cfg = config.load()
 registerWithManager()
 
 -- Load and execute persistent role on startup
-if cfg.secondaryRole then
+if cfg.secondaryRole and cfg.secondaryRole.name then
     print("Loading persistent role: " .. cfg.secondaryRole.displayName)
-    local task = {
-        name = "assign_role",
-        script = "worker/roles/" .. cfg.secondaryRole.name .. ".lua",
-        params = {}
-    }
-    doTask(task)
-end
-
-setStatus("idle")
-
-local function messageListenerTask()
-    -- Start heartbeat timer
-    local heartbeatTimer = os.startTimer(heartbeatRate)
-
-    -- Open for messages
-    network.open(os.getComputerID())
-
-    -- Main event loop
-    while true do
-        local event, p1, p2, p3, p4, p5, p6 = os.pullEvent() -- Get all events
-
-        if event == "terminate" then
-            print("Shutting down...")
-            network.close(protocol.id)
+    local roleScriptPath = "manager/src/worker/roles/" .. cfg.secondaryRole.name .. ".lua"
+    if fs.exists(roleScriptPath) then
+        -- The role script is now responsible for the main loop.
+        -- It should call worker_messaging.start() itself.
+        local requirePath = (roleScriptPath):gsub(".lua", ""):gsub("/", ".")
+        local role_module = require(requirePath)
+        if role_module and role_module.run then
+            -- The run function should be a blocking call that takes over the worker
+            role_module.run()
+            -- If the script returns, it means it's done or failed.
+            print("Role script finished.")
+            -- We stop here, as the role script handled everything.
             return
-
-        elseif event == "timer" and p1 == heartbeatTimer then
-            network.send(managerId, os.getComputerID(), protocol.serialize({ type = "HEARTBEAT", status = status:get() }))
-            heartbeatTimer = os.startTimer(heartbeatRate) -- Restart timer
-
-        elseif event == "modem_message" then
-            local side, channel, replyChannel, message_raw, distance = p1, p2, p3, p4, p5 -- Map to user's desired names
-            local msg = textutils.unserializeJSON(message_raw) -- Deserialize the message
-
-            if replyChannel == managerId then
-                if msg and msg.type == "TASK" then -- Removed protocol check
-                    local taskResult = doTask(msg)
-                    network.send(managerId, os.getComputerID(), {
-                        type = "TASK_RESULT",
-                        success = taskResult.success,
-                        result = taskResult.result
-                    })
-                    setStatus("idle")
-                elseif msg and msg.type == "COMMAND" and msg.command == "clear_role" then
-                    cfg.secondaryRole = nil
-                    config.save(cfg)
-                    setStatus("idle")
-                    print("Role cleared by manager.")
-                elseif msg and msg.type == "SET_ROLE" then
-                    cfg.secondaryRole = msg.role -- Update the role in config
-                    config.save(cfg)
-                    print("Role updated to: " .. msg.role.displayName)
-                    local task = {
-                        name = "assign_role",
-                        script = "worker/roles/" .. msg.role.name .. ".lua",
-                        params = {}
-                    }
-                    doTask(task)
-                    setStatus("working: " .. msg.role.displayName)
-                end
-            end
+        else
+            print("Role script is invalid. Missing :run() function.")
         end
+    else
+        print("Role script not found: " .. roleScriptPath)
     end
 end
 
+-- Default behavior if no role is assigned or role script finishes
+worker_messaging.setStatus("idle")
+
 local function WorkerStatusApp()
+    local status = worker_messaging.getStatus()
     return compose.Column({
         modifier = compose.Modifier:new():fillMaxSize(),
         horizontalAlignment = compose.HorizontalAlignment.Center,
@@ -185,7 +104,7 @@ local function WorkerStatusApp()
     }, {
         compose.Text({ text = "--- Worker Computer ---" }),
         compose.Text({ text = "ID: " .. os.getComputerID() }),
-        compose.Text({ text = "Manager: " .. (managerId or "N/A") }),
+        compose.Text({ text = "Manager: " .. (worker_messaging.getManagerId() or "N/A") }),
         compose.Text({ text = "Status: " .. status:get() })
     })
 end
@@ -193,6 +112,10 @@ end
 local function composeAppTask()
     local monitor = peripheral.find("monitor") or error("No monitor found", 0)
     compose.render(WorkerStatusApp, monitor)
+end
+
+local function messageListenerTask()
+    worker_messaging.start()
 end
 
 local tasks = {messageListenerTask}

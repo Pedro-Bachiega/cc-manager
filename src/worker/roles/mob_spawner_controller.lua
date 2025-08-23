@@ -2,13 +2,7 @@
 
 local compose = require("compose.src.compose")
 local ui = require("manager.src.common.ui")
-local network = require("manager.src.common.network")
-
---[[--------------------------------------------------------------------------
-                                CONFIGURATION
-----------------------------------------------------------------------------]]
-
-local controlProtocol = 54321
+local worker_messaging = require("manager.src.common.worker_messaging")
 
 --[[--------------------------------------------------------------------------
                                   LOGIC
@@ -68,38 +62,35 @@ end
                                   MAIN LOOP
 ----------------------------------------------------------------------------]]
 
-local function composeAppTask()
-    local monitor = peripheral.find("monitor") or error("No monitor found", 0)
-    compose.render(App, monitor)
-end
+local M = {}
 
-local function messageListenerTask()
-    network.open(controlProtocol)
-    while true do
-        local event, p1, p2, p3, p4, p5, p6 = os.pullEvent() -- Get all events
-        if event == "modem_message" then
-            local side, channel, replyChannel, message_raw, distance = p1, p2, p3, p4, p5 -- Map to user's desired names
-            local message = textutils.unserializeJSON(message_raw) -- Deserialize the message
-            print("Received message: " .. textutils.serializeJSON(message))
-            if message.role == "mob_spawner_controller" and message.command == "toggle_state" then
-                toggleSpawner()
-                print("Toggled spawner state to: " .. tostring(spawnerEnabled:get()))
-            end
-        end
-    end
-end
+function M.run()
+    worker_messaging.setStatus("running mob spawner controller")
 
-local S = {}
-
-function S.execute()
     -- Initial setup
     if redstoneSide:get() ~= nil then
         setSpawnerState(spawnerEnabled:get())
     end
 
-    local monitor = peripheral.find("monitor")
-    local tasks = {messageListenerTask}
+    local function composeAppTask()
+        local monitor = peripheral.find("monitor") or error("No monitor found", 0)
+        compose.render(App, monitor)
+    end
 
+    local function messageHandler(message)
+        print("Received message: " .. textutils.serializeJSON(message))
+        if message.role == "mob_spawner_controller" and message.command == "toggle_state" then
+            toggleSpawner()
+            print("Toggled spawner state to: " .. tostring(spawnerEnabled:get()))
+        end
+    end
+
+    local function messageListenerTask()
+        worker_messaging.start(messageHandler)
+    end
+
+    local tasks = {messageListenerTask}
+    local monitor = peripheral.find("monitor")
     if monitor then
         table.insert(tasks, composeAppTask)
     end
@@ -107,4 +98,4 @@ function S.execute()
     parallel.waitForAll(unpack(tasks))
 end
 
-return S
+return M
