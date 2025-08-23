@@ -130,6 +130,8 @@ local function WorkerDetails(worker, role)
     if role then -- Only show clear role if a role is assigned
         table.insert(actions, compose.Button({
             text = "Clear Role",
+            backgroundColor = colors.lightGray,
+            textColor = colors.black,
             onClick = function()
                 network.send(worker.id, os.getComputerID(), { type = "COMMAND", command = "clear_role" })
                 assignedRoles[worker.id] = nil -- Clear role in manager's state
@@ -153,9 +155,11 @@ local function WorkerDetails(worker, role)
         -- Conditional role assignment UI
         footer = compose.Column({}, {
             compose.Text({ text = "Assign Role:" }),
-            compose.Column({}, map(availableRoles, function(roleOption)
+            compose.Column({
+                verticalArrangement = compose.Arrangement.SpacedBy,
+                spacing = 1
+            }, map(availableRoles, function(roleOption)
                 return compose.Column({}, {
-                    compose.Text({ text = "" }),
                     compose.Button({
                         text = roleOption.displayName,
                         backgroundColor = colors.lightGray,

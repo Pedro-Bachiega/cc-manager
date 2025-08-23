@@ -80,8 +80,10 @@ local function messageListenerTask()
         if event == "modem_message" then
             local side, channel, replyChannel, message_raw, distance = p1, p2, p3, p4, p5 -- Map to user's desired names
             local message = textutils.unserializeJSON(message_raw) -- Deserialize the message
+            print("Received message: " .. textutils.serializeJSON(message))
             if message.role == "mob_spawner_controller" and message.command == "toggle_state" then
                 toggleSpawner()
+                print("Toggled spawner state to: " .. tostring(spawnerEnabled:get()))
             end
         end
     end
@@ -93,9 +95,10 @@ if redstoneSide:get() ~= nil then
 end
 
 local monitor = peripheral.find("monitor")
+local tasks = {messageListenerTask}
+
 if monitor then
-    parallel.waitForAll(composeAppTask, messageListenerTask)
-else
-    -- No monitor attached, just listen for messages
-    messageListenerTask()
+    table.insert(tasks, composeAppTask)
 end
+
+parallel.waitForAll(unpack(tasks))
