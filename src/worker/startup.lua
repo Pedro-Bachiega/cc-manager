@@ -79,9 +79,8 @@ local function registerWithManager()
             if event == "modem_message" then
                 local side, channel, replyChannel, message_raw, distance = p1, p2, p3, p4, p5 -- Map to user's desired names
                 local message = textutils.unserializeJSON(message_raw) -- Deserialize the message
-                local senderId = replyChannel
                 if message and message.type == "REGISTER_OK" then -- Removed protocol check
-                    managerId = senderId
+                    managerId = replyChannel
                     config.save({ managerId = managerId }) -- Save the manager ID
                     print("Registered with manager: " .. managerId)
                     done = true
@@ -118,7 +117,7 @@ network.open(os.getComputerID())
 
 -- Main event loop
 while true do
-    local event, p1, p2, p3, p4, p5, p6 = os.pullEvent() -- Get all events
+    local event, p1, p2, p3, p4, p5 = os.pullEvent() -- Get all events
 
     if event == "terminate" then
         print("Shutting down...")
@@ -132,6 +131,8 @@ while true do
     elseif event == "modem_message" then
         local side, channel, replyChannel, message_raw, distance = p1, p2, p3, p4, p5
         local message = textutils.unserializeJSON(message_raw)
+
+        print("Received message: " .. message)
 
         if replyChannel == managerId then
             if message and message.type == "TASK" then
