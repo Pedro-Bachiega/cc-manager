@@ -5,27 +5,9 @@ local config = require("src.common.config")
 local cfg = config.load()
 local role = cfg.role
 
-print("Removing old project files...")
-local function deleteDir(path)
-    if fs.exists(path) then
-        if fs.isDir(path) then
-            for _, file in ipairs(fs.list(path)) do
-                deleteDir(path .. "/" .. file)
-            end
-            fs.delete(path)
-        else
-            fs.delete(path)
-        end
-    end
+while not role or role == "" do
+    print("Invalid computer role 'nil', what is it?")
+    role = read()
 end
-
-if role == "" then
-    print("Could not find the computer's role, aborting update")
-    return
-end
-
-deleteDir("compose")
-deleteDir("manager")
-fs.delete("startup.lua")
 
 shell.run("pastebin", "run", "QCqV74ik", role)
