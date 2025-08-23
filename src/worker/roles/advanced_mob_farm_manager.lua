@@ -156,11 +156,17 @@ local function periodicUpdateTask()
     end
 end
 
--- Initial setup
-if redstoneSide:get() ~= nil then
-    setFarmState(farmEnabled:get())
-    countItems()
+local S = {}
+
+function S.execute()
+    -- Initial setup
+    if redstoneSide:get() ~= nil then
+        setFarmState(farmEnabled:get())
+        countItems()
+    end
+
+    -- Run both tasks in parallel
+    parallel.waitForAll(composeAppTask, periodicUpdateTask)
 end
 
--- Run both tasks in parallel
-parallel.waitForAll(composeAppTask, periodicUpdateTask)
+return S

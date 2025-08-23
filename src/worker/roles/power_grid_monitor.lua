@@ -131,13 +131,19 @@ local function periodicUpdateTask()
     end
 end
 
--- Initial setup
-getPowerLevel()
+local S = {}
 
-local monitor = peripheral.find("monitor")
-if monitor then
-    parallel.waitForAll(composeAppTask, messageListenerTask, periodicUpdateTask)
-else
-    -- No monitor attached, just listen for messages and update power level
-    parallel.waitForAll(messageListenerTask, periodicUpdateTask)
+function S.execute()
+    -- Initial setup
+    getPowerLevel()
+
+    local monitor = peripheral.find("monitor")
+    if monitor then
+        parallel.waitForAll(composeAppTask, messageListenerTask, periodicUpdateTask)
+    else
+        -- No monitor attached, just listen for messages and update power level
+        parallel.waitForAll(messageListenerTask, periodicUpdateTask)
+    end
 end
+
+return S

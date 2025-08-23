@@ -26,6 +26,13 @@ local function setStatus(newStatus)
     status:set(newStatus)
 end
 
+local function executeScript(scriptPath, params)
+    local requirePath = (scriptPath):gsub(".lua", ""):gsub("/", ".")
+    local script = require(requirePath)
+    local success, result = pcall(function() script.execute(unpack(params or {})) end)
+    return success, result
+end
+
 local function doTask(task)
     local scriptPath = task.script and "manager/src/" .. task.script or nil
 
@@ -41,7 +48,7 @@ local function doTask(task)
     setStatus("working: " .. task.name)
     print("Executing task: " .. task.name .. " (script: " .. scriptPath .. ")")
 
-    local success, result = pcall(shell.run, scriptPath, unpack(task.params or {}))
+    local success, result = executeScript(scriptPath, task.params)
 
     if success then
         print("Task completed.")

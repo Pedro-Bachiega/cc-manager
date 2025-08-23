@@ -89,16 +89,22 @@ local function messageListenerTask()
     end
 end
 
--- Initial setup
-if redstoneSide:get() ~= nil then
-    setSpawnerState(spawnerEnabled:get())
+local S = {}
+
+function S.execute()
+    -- Initial setup
+    if redstoneSide:get() ~= nil then
+        setSpawnerState(spawnerEnabled:get())
+    end
+
+    local monitor = peripheral.find("monitor")
+    local tasks = {messageListenerTask}
+
+    if monitor then
+        table.insert(tasks, composeAppTask)
+    end
+
+    parallel.waitForAll(unpack(tasks))
 end
 
-local monitor = peripheral.find("monitor")
-local tasks = {messageListenerTask}
-
-if monitor then
-    table.insert(tasks, composeAppTask)
-end
-
-parallel.waitForAll(unpack(tasks))
+return S
