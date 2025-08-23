@@ -1,6 +1,8 @@
+local compose = require("compose.src.compose")
+
 local M = {}
 
-function M.SideSelector(compose, onSideSelected)
+function M.SideSelector(onSideSelected)
     return compose.Column({
         modifier = compose.Modifier:new():fillMaxSize(),
         horizontalAlignment = compose.HorizontalAlignment.Center,
@@ -19,7 +21,7 @@ function M.SideSelector(compose, onSideSelected)
     })
 end
 
-function M.StateSelector(compose, title, options, onStateSelected)
+function M.StateSelector(title, options, onStateSelected)
     local buttons = {}
     for _, option in ipairs(options) do
         table.insert(buttons, compose.Button({ text = option, onClick = function() onStateSelected(option) end }))

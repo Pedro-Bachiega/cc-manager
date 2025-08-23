@@ -72,6 +72,7 @@ end
 
 local workers = compose.remember(initialWorkers, "workers", true)
 local selectedWorkerId = compose.remember(nil, "selectedWorkerId")
+local loadingText = compose.remember(nil, "loading")
 
 local function assignRoleToWorker(targetId, role)
     if targetId and workers:get()[targetId] then
@@ -124,24 +125,30 @@ local function WorkerDetails(worker, role)
 
     table.insert(actions, compose.Button({
         text = "Update Worker",
-        backgroundColor = colors.orange,
-        textColor = colors.white,
         onClick = function()
-            network.send(worker.id, os.getComputerID(), { type = "COMMAND", command = "update" })
-            selectedWorkerId:set(nil) -- Go back to main list
+            loadingText:set("Updating worker...")
+            parallel.waitForAll(function()
+                network.send(worker.id, os.getComputerID(), { type = "COMMAND", command = "update" })
+                os.sleep(2) -- Give time for the message to be sent
+                loadingText:set(nil)
+                selectedWorkerId:set(nil) -- Go back to main list
+            end)
         end
     }))
 
     if role then -- Only show clear role if a role is assigned
         table.insert(actions, compose.Button({
             text = "Clear Role",
-            backgroundColor = colors.white,
-            textColor = colors.black,
             onClick = function()
-                network.send(worker.id, os.getComputerID(), { type = "COMMAND", command = "clear_role" })
-                assignedRoles[worker.id] = nil -- Clear role in manager's state
-                saveAssignedRoles() -- Save updated roles
-                selectedWorkerId:set(nil) -- Go back to main list
+                loadingText:set("Clearing role...")
+                parallel.waitForAll(function()
+                    network.send(worker.id, os.getComputerID(), { type = "COMMAND", command = "clear_role" })
+                    assignedRoles[worker.id] = nil -- Clear role in manager's state
+                    saveAssignedRoles() -- Save updated roles
+                    os.sleep(2) -- Give time for the message to be sent
+                    loadingText:set(nil)
+                    selectedWorkerId:set(nil) -- Go back to main list
+                end)
             end
         }))
 
@@ -167,11 +174,14 @@ local function WorkerDetails(worker, role)
                 return compose.Column({}, {
                     compose.Button({
                         text = roleOption.displayName,
-                        backgroundColor = colors.white,
-                        textColor = colors.black,
                         onClick = function()
-                            assignRoleToWorker(worker.id, roleOption)
-                            selectedWorkerId:set(nil)
+                            loadingText:set("Assigning role...")
+                            parallel.waitForAll(function()
+                                assignRoleToWorker(worker.id, roleOption)
+                                os.sleep(2) -- Give time for the message to be sent
+                                loadingText:set(nil)
+                                selectedWorkerId:set(nil)
+                            end)
                         end
                     })
                 })
@@ -201,6 +211,16 @@ local function WorkerDetails(worker, role)
 end
 
 local function App()
+    if loadingText:get() then
+        return compose.Column({
+            modifier = compose.Modifier:new():fillMaxSize(),
+            verticalArrangement = compose.Arrangement.SpaceAround,
+            horizontalAlignment = compose.HorizontalAlignment.Center
+        }, {
+            compose.ProgressBar({ text = loadingText:get() })
+        })
+    end
+
     local selectedId = selectedWorkerId:get()
     if selectedId then
         local worker = workers:get()[selectedId]
@@ -250,11 +270,13 @@ local function App()
             end),
             compose.Button({
                 text = "Update Manager",
-                backgroundColor = colors.white,
-                textColor = colors.black,
                 onClick = function()
-                    print("Running update script...")
-                    shell.run("manager/update.lua")
+                    loadingText:set("Updating manager...")
+                    parallel.waitForAll(function()
+                        print("Running update script...")
+                        shell.run("manager/update.lua")
+                        loadingText:set(nil)
+                    end)
                 end
             })
         })

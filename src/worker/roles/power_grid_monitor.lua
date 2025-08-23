@@ -16,6 +16,7 @@ local updateInterval = 5
 local powerLevel = compose.remember(0, "powerLevel")
 local energyCellName = compose.remember(nil, "energyCellName", true)
 local controlledMachines = compose.remember({}, "controlledMachines", true)
+local loadingText = compose.remember(nil, "loading")
 
 local term = peripheral.find("monitor") or term
 
@@ -32,7 +33,7 @@ local function getPowerLevel()
     if not cellName then
         return
     end
-    local cell = peripheral.wrap(cellName)
+    local p = peripheral.wrap(cellName)
     if cell and cell.getEnergy and cell.getMaxEnergy then
         local current = cell.getEnergy()
         local max = cell.getMaxEnergy()
@@ -45,12 +46,16 @@ local function getPowerLevel()
 end
 
 local function setMachineState(side, enabled)
-    redstone.setOutput(side, enabled)
-    local machines = controlledMachines:get()
-    if machines[side] then
-        machines[side].enabled = enabled
-        controlledMachines:set(machines)
-    end
+    loadingText:set("Setting machine state...")
+    parallel.waitForAll(function()
+        redstone.setOutput(side, enabled)
+        local machines = controlledMachines:get()
+        if machines[side] then
+            machines[side].enabled = enabled
+            controlledMachines:set(machines)
+        end
+        loadingText:set(nil)
+    end)
 end
 
 --[[--------------------------------------------------------------------------
@@ -84,6 +89,20 @@ local function MainView()
     })
 end
 
+local function App()
+    if loadingText:get() then
+        return compose.Column({
+            modifier = compose.Modifier:new():fillMaxSize(),
+            verticalArrangement = compose.Arrangement.SpaceAround,
+            horizontalAlignment = compose.HorizontalAlignment.Center
+        }, {
+            compose.ProgressBar({ text = loadingText:get() })
+        })
+    end
+
+    return MainView()
+end
+
 --[[--------------------------------------------------------------------------
                                   MAIN LOOP
 ----------------------------------------------------------------------------]]
@@ -99,7 +118,7 @@ function M.run()
 
     local function composeAppTask()
         local monitor = peripheral.find("monitor") or error("No monitor found", 0)
-        compose.render(MainView, monitor)
+        compose.render(App, monitor)
     end
 
     local function messageHandler(message)
