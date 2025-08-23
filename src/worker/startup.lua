@@ -80,8 +80,7 @@ local function registerWithManager()
                 local side, channel, replyChannel, message_raw, distance = p1, p2, p3, p4, p5 -- Map to user's desired names
                 local message = textutils.unserializeJSON(message_raw) -- Deserialize the message
                 local senderId = replyChannel
-                local msg = message -- message is already deserialized
-                if msg and msg.type == "REGISTER_OK" then -- Removed protocol check
+                if message and message.type == "REGISTER_OK" then -- Removed protocol check
                     managerId = senderId
                     config.save({ managerId = managerId }) -- Save the manager ID
                     print("Registered with manager: " .. managerId)
@@ -114,7 +113,9 @@ setStatus("idle")
 -- Start heartbeat timer
 local heartbeatTimer = os.startTimer(heartbeatRate)
 
--- Main event loop
+-- Open for messages
+network.open(os.getComputerID())
+
 -- Main event loop
 while true do
     local event, p1, p2, p3, p4, p5, p6 = os.pullEvent() -- Get all events
@@ -129,11 +130,11 @@ while true do
         heartbeatTimer = os.startTimer(heartbeatRate) -- Restart timer
 
     elseif event == "modem_message" then
-        local side, channel, replyChannel, message_raw, distance = p1, p2, p3, p4, p5 -- Map to user's desired names
-        local message = textutils.unserializeJSON(message_raw) -- Deserialize the message
-        local senderId = replyChannel
-        if senderId == managerId then
-            if message and message.type == "TASK" then -- Removed protocol check
+        local side, channel, replyChannel, message_raw, distance = p1, p2, p3, p4, p5
+        local message = textutils.unserializeJSON(message_raw)
+
+        if replyChannel == managerId then
+            if message and message.type == "TASK" then
                 local taskResult = doTask(message)
                 network.send(managerId, os.getComputerID(), protocol.serialize({
                     type = "TASK_RESULT",

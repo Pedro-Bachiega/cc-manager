@@ -166,6 +166,7 @@ local function WorkerDetails(worker, role)
                         textColor = colors.black,
                         onClick = function()
                             assignRoleToWorker(worker.id, roleOption)
+                            selectedWorkerId:set(nil)
                         end
                     })
                 })
