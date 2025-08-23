@@ -77,11 +77,10 @@ local function assignRoleToWorker(targetId, role)
     if targetId and workers:get()[targetId] then
         assignedRoles[targetId] = role
         saveAssignedRoles()
-        network.send(targetId, os.getComputerID(),
-            protocol.serialize({
-                type = "SET_ROLE", -- Changed from "TASK" to "SET_ROLE"
-                role = role -- Pass the entire role object
-            }))
+        network.send(targetId, os.getComputerID(), {
+            type = "SET_ROLE", -- Changed from "TASK" to "SET_ROLE"
+            role = role -- Pass the entire role object
+        })
     end
 end
 

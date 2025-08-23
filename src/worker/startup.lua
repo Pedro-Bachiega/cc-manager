@@ -27,7 +27,8 @@ local function setStatus(newStatus)
 end
 
 local function doTask(task)
-    local scriptPath = task.script
+    local scriptPath = task.script and "manager/src/" .. task.script or nil
+
     if not scriptPath then
         print("Error: Task received without a script path.")
         setStatus("idle")
@@ -40,7 +41,7 @@ local function doTask(task)
     setStatus("working: " .. task.name)
     print("Executing task: " .. task.name .. " (script: " .. scriptPath .. ")")
 
-    local success, result = pcall(shell.run, "manager/src/" .. scriptPath, unpack(task.params or {}))
+    local success, result = pcall(shell.run, scriptPath, unpack(task.params or {}))
 
     if success then
         print("Task completed.")
@@ -102,11 +103,11 @@ local cfg = config.load()
 registerWithManager()
 
 -- Load and execute persistent role on startup
-if cfg.role then
-    print("Loading persistent role: " .. cfg.role.displayName)
+if cfg.secondaryRole then
+    print("Loading persistent role: " .. cfg.secondaryRole.displayName)
     local task = {
         name = "assign_role",
-        script = "worker/roles/" .. cfg.role.name .. ".lua",
+        script = "worker/roles/" .. cfg.secondaryRole.name .. ".lua",
         params = {}
     }
     doTask(task)
@@ -136,25 +137,24 @@ local function messageListenerTask()
 
         elseif event == "modem_message" then
             local side, channel, replyChannel, message_raw, distance = p1, p2, p3, p4, p5 -- Map to user's desired names
-            local message = textutils.unserializeJSON(message_raw) -- Deserialize the message
-            local senderId = replyChannel
-            if senderId == managerId then
-                local msg = message -- message is already deserialized
+            local msg = textutils.unserializeJSON(message_raw) -- Deserialize the message
+
+            if replyChannel == managerId then
                 if msg and msg.type == "TASK" then -- Removed protocol check
                     local taskResult = doTask(msg)
-                    network.send(managerId, os.getComputerID(), protocol.serialize({
+                    network.send(managerId, os.getComputerID(), {
                         type = "TASK_RESULT",
                         success = taskResult.success,
                         result = taskResult.result
-                    }))
+                    })
                     setStatus("idle")
                 elseif msg and msg.type == "COMMAND" and msg.command == "clear_role" then
-                    cfg.role = nil
+                    cfg.secondaryRole = nil
                     config.save(cfg)
                     setStatus("idle")
                     print("Role cleared by manager.")
                 elseif msg and msg.type == "SET_ROLE" then
-                    cfg.role = msg.role -- Update the role in config
+                    cfg.secondaryRole = msg.role -- Update the role in config
                     config.save(cfg)
                     print("Role updated to: " .. msg.role.displayName)
                     local task = {

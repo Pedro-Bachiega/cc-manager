@@ -10,4 +10,7 @@ while not role or role == "" do
     role = read()
 end
 
+cfg.role = role
+config.save(cfg)
+
 shell.run("pastebin", "run", "QCqV74ik", role)
