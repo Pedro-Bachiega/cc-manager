@@ -77,13 +77,12 @@ local function assignRoleToWorker(targetId, role)
     if targetId and workers:get()[targetId] then
         assignedRoles[targetId] = role
         saveAssignedRoles()
-        network.send(targetId, os.getComputerID(),
-            protocol.serialize({
-                type = "TASK",
-                name = "assign_role",
-                script = "worker/roles/" .. role.name .. ".lua",
-                params = {}
-            }))
+        network.send(targetId, os.getComputerID(), {
+            type = "TASK",
+            name = "assign_role",
+            script = "worker/roles/" .. role.name .. ".lua",
+            params = {}
+        })
     end
 end
 
@@ -95,17 +94,16 @@ local function handleRednetMessage(senderId, message)
 
     if msg.type == "REGISTER" then
         currentWorkers[senderId] = { id = senderId, status = "online", last_heartbeat = os.time() }
-        network.send(senderId, os.getComputerID(), protocol.serialize({ type = "REGISTER_OK" }))
+        network.send(senderId, os.getComputerID(), { type = "REGISTER_OK" })
         local assignedRole = assignedRoles[senderId]
         if assignedRole then
-            network.send(senderId, os.getComputerID(),
-                protocol.serialize({
-                    type = "TASK",
-                    name = "assign_role",
-                    script = "worker/roles/" ..
-                        assignedRole.name .. ".lua",
-                    params = {}
-                }))
+            network.send(senderId, os.getComputerID(), {
+                type = "TASK",
+                name = "assign_role",
+                script = "worker/roles/" ..
+                    assignedRole.name .. ".lua",
+                params = {}
+            })
         end
     elseif msg.type == "HEARTBEAT" then
         if currentWorkers[senderId] then

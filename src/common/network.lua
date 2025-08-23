@@ -32,7 +32,7 @@ end
 
 function network.send(channel, replyChannel, message)
     local m = getModem()
-    m.transmit(channel, replyChannel, textutils.serializeJSON(message))
+    m.transmit(channel, replyChannel, protocol.serialize(message))
 end
 
 function network.broadcast(message)
