@@ -2,71 +2,17 @@
 
 -- Load shared APIs using require
 local compose = require("compose.src.compose")
-local protocol = require("manager.src.common.protocol")
 local config = require("manager.src.common.config")
-local network = require("manager.src.common.network")
 local workerMessaging = require("manager.src.common.workerMessaging")
+local registrationService = require("manager.src.worker.services.registrationService")
+local WorkerView = require("manager.src.worker.view.workerView")
+local WorkerViewModel = require("manager.src.worker.viewModel.workerViewModel")
 
---[[--------------------------------------------------------------------------
-                                INITIALIZATION
-----------------------------------------------------------------------------]]
-
--- How long to wait for a manager to respond to registration (in seconds)
-local registrationTimeout = 5
-local managerId = nil
-
---[[--------------------------------------------------------------------------
-                                  MAIN LOGIC
-----------------------------------------------------------------------------]]
-
-local function registerWithManager()
-    network.open(protocol.id)
-
-    local savedConfig = config.load()
-    if savedConfig.managerId then
-        managerId = savedConfig.managerId
-        print("Loaded manager ID from config: " .. managerId)
-    end
-
-    while not managerId do
-        workerMessaging.setStatus("searching for manager")
-        network.broadcast(protocol.serialize({ type = "REGISTER" }))
-
-        local responseTimer = os.startTimer(registrationTimeout)
-        local done = false
-        while not done do
-            local event, p1, p2, p3, p4, p5, p6 = os.pullEvent() -- Get all events
-            if event == "modem_message" then
-                local side, channel, replyChannel, message_raw, distance = p1, p2, p3, p4, p5 -- Map to user's desired names
-                local message = textutils.unserializeJSON(message_raw) -- Deserialize the message
-                local senderId = replyChannel
-                local msg = message -- message is already deserialized
-                if msg and msg.type == "REGISTER_OK" then -- Removed protocol check
-                    managerId = senderId
-                    local current_config = config.load()
-                    current_config.managerId = managerId
-                    config.save(current_config) -- Save the manager ID
-                    print("Registered with manager: " .. managerId)
-                    done = true
-                end
-            elseif event == "timer" and p1 == responseTimer then
-                done = true -- Timeout expired
-            end
-        end
-
-        if not managerId then
-            workerMessaging.setStatus("manager not found")
-            sleep(10) -- Wait before retrying
-        end
-    end
-    workerMessaging.setManagerId(managerId)
-end
+-- Start registration process
+registrationService.registerWithManager()
 
 -- Load the config module from the newly cloned manager directory
 local cfg = config.load()
-
--- Start registration process
-registerWithManager()
 
 -- Load and execute persistent role on startup
 if cfg.secondaryRole and cfg.secondaryRole.name then
@@ -95,23 +41,11 @@ end
 -- Default behavior if no role is assigned or role script finishes
 workerMessaging.setStatus("idle")
 
-local function WorkerStatusApp()
-    local status = workerMessaging.getStatus()
-    return compose.Column({
-        modifier = compose.Modifier:new():fillMaxSize(),
-        horizontalAlignment = compose.HorizontalAlignment.Center,
-        verticalArrangement = compose.Arrangement.Center
-    }, {
-        compose.Text({ text = "--- Worker Computer ---" }),
-        compose.Text({ text = "ID: " .. os.getComputerID() }),
-        compose.Text({ text = "Manager: " .. (workerMessaging.getManagerId() or "N/A") }),
-        compose.Text({ text = "Status: " .. status:get() })
-    })
-end
+local viewModel = WorkerViewModel:new()
 
 local function composeAppTask()
     local monitor = peripheral.find("monitor") or error("No monitor found", 0)
-    compose.render(WorkerStatusApp, monitor)
+    compose.render(function() return WorkerView.WorkerStatusApp(viewModel) end, monitor)
 end
 
 local function messageListenerTask()

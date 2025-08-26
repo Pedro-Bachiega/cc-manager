@@ -4,6 +4,14 @@ A robust framework designed for managing a network of ComputerCraft computers wi
 
 ## Architecture
 
+The project follows a Model-View-ViewModel (MVVM) architecture to separate concerns and improve maintainability. This architecture is applied to both the `manager` and `worker` components.
+
+*   **View:** The user interface, responsible for displaying data and forwarding user input. The views are implemented using the `compose` library and are designed to be as stateless as possible.
+*   **ViewModel:** Acts as a bridge between the View and the Model/Services. It holds the application's state and business logic. The ViewModel exposes data to the View and provides commands that the View can execute.
+*   **Services:** Responsible for data access and abstracting data sources. This includes handling network communication, file I/O, and other external interactions.
+
+## System Components
+
 The system is composed of two main types of computers:
 
 *   **Manager Computer (`manager/src/manager/startup.lua`):**
@@ -40,9 +48,25 @@ cc-manager/
     │   ├── ui.lua              # Common UI components built with the 'compose' library
     │   └── workerMessaging.lua # Core logic for worker-manager communication
     ├── manager/
-    │   └── startup.lua   # Main script for the manager computer
+    │   ├── startup.lua   # Main script for the manager computer
+    │   ├── services/
+    │   │   └── workerService.lua
+    │   ├── view/
+    │   │   └── managerView.lua
+    │   └── viewModel/
+    │       └── managerViewModel.lua
     └── worker/
         ├── startup.lua   # Main script for the worker computers
+        ├── services/
+        │   └── registrationService.lua
+        ├── view/
+        │   ├── advancedMobFarmManagerView.lua
+        │   ├── mobSpawnerControllerView.lua
+        │   └── powerGridMonitorView.lua
+        ├── viewModel/
+        │   ├── advancedMobFarmManagerViewModel.lua
+        │   ├── mobSpawnerControllerViewModel.lua
+        │   └── powerGridMonitorViewModel.lua
         └── roles/        # Directory containing specialized worker role scripts
             ├── advanced_mob_farm_manager.lua
             ├── mob_spawner_controller.lua
