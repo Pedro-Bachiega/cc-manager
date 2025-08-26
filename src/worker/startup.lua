@@ -56,7 +56,7 @@ local function registerWithManager()
 
         if not managerId then
             workerMessaging.setStatus("manager not found")
-            os.sleep(10) -- Wait before retrying
+            sleep(10) -- Wait before retrying
         end
     end
     workerMessaging.setManagerId(managerId)

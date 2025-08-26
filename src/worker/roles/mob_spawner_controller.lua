@@ -1,6 +1,8 @@
 -- Mob Spawner Controller Role
 
 local compose = require("compose.src.compose")
+local coroutineUtils = require("manager.src.common.coroutineUtils")
+local taskQueue = require("manager.src.common.taskQueue")
 local ui = require("manager.src.common.ui")
 local workerMessaging = require("manager.src.common.workerMessaging")
 
@@ -21,10 +23,11 @@ local function setSpawnerState(enabled)
 end
 
 local function toggleSpawner()
-    loadingText:set("Toggling spawner...")
-    parallel.waitForAll(function()
+    taskQueue.addTask(function()
+        loadingText:set("Toggling spawner...")
         local newStatus = not spawnerEnabled:get()
         setSpawnerState(newStatus)
+        coroutineUtils.delay(1)
         loadingText:set(nil)
     end)
 end
@@ -93,7 +96,6 @@ function M.run()
     end
 
     local function messageHandler(message)
-        print("Received message: " .. textutils.serializeJSON(message))
         if message.role == "mob_spawner_controller" and message.command == "toggle_state" then
             toggleSpawner()
             print("Toggled spawner state to: " .. tostring(spawnerEnabled:get()))
@@ -106,7 +108,7 @@ function M.run()
         })
     end
 
-    local tasks = {messageListenerTask}
+    local tasks = {messageListenerTask, taskQueue.runTaskWorker, coroutineUtils.coroutineScheduler}
     local monitor = peripheral.find("monitor")
     if monitor then
         table.insert(tasks, composeAppTask)

@@ -4,6 +4,7 @@ local compose = require("compose.src.compose")
 local coroutineUtils = require("manager.src.common.coroutineUtils")
 local network = require("manager.src.common.network")
 local protocol = require("manager.src.common.protocol")
+local taskQueue = require("manager.src.common.taskQueue")
 
 local availableRoles = {
     {
@@ -45,11 +46,6 @@ local disconnectTimeout = 15
 ----------------------------------------------------------------------------]]
 
 local assignedRoles = {}
-local taskQueue = {}
-
-local function addTask(task)
-    table.insert(taskQueue, task)
-end
 
 local function saveAssignedRoles()
     local file = fs.open(assignedRolesFile, "w")
@@ -134,7 +130,7 @@ local function WorkerDetails(worker, role)
         text = "Update Worker",
         onClick = function()
             loadingText:set("Updating worker...")
-            addTask(function()
+            taskQueue.addTask(function()
                 network.send(worker.id, os.getComputerID(), { type = "COMMAND", command = "update" })
                 coroutineUtils.delay(1)
                 loadingText:set(nil)
@@ -150,7 +146,7 @@ local function WorkerDetails(worker, role)
             text = "Clear Role",
             onClick = function()
                 loadingText:set("Clearing role...")
-                addTask(function()
+                taskQueue.addTask(function()
                     network.send(worker.id, os.getComputerID(), { type = "COMMAND", command = "clear_role" })
                     assignedRoles[worker.id] = nil
                     saveAssignedRoles()
@@ -165,7 +161,7 @@ local function WorkerDetails(worker, role)
                 text = "Toggle State",
                 onClick = function()
                     loadingText:set("Toggling state...")
-                    addTask(function()
+                    taskQueue.addTask(function()
                         network.send(worker.id, os.getComputerID(), { role = role.name, command = "toggle_state" })
                         coroutineUtils.delay(1)
                         loadingText:set(nil)
@@ -192,7 +188,7 @@ local function WorkerDetails(worker, role)
                         text = roleOption.displayName,
                         onClick = function()
                             loadingText:set("Assigning role...")
-                            addTask(function()
+                            taskQueue.addTask(function()
                                 assignRoleToWorker(worker.id, roleOption)
                                 coroutineUtils.delay(2)
                                 loadingText:set(nil)
@@ -212,10 +208,10 @@ local function WorkerDetails(worker, role)
             textColor = colors.white,
             onClick = function() selectedWorkerId:set(nil) end
         }),
-        compose.Text({ text = "" }),
+        compose.Spacer({ modifier = compose.Modifier:new():height(1) }),
         compose.Text({ text = "Worker " .. worker.id }),
         compose.Text({ text = "Role: " .. (role and role.displayName or "N/A") }),
-        compose.Text({ text = "" }),
+        compose.Spacer({ modifier = compose.Modifier:new():height(1) }),
         footer
     })
 end
@@ -282,7 +278,7 @@ local function App()
                 compose.Button({
                     text = "Test Loading",
                     onClick = function()
-                        addTask(function()
+                        taskQueue.addTask(function()
                             loadingText:set("Loading...")
                             coroutineUtils.delay(2)
                             loadingText:set(nil)
@@ -293,7 +289,7 @@ local function App()
                 compose.Button({
                     text = "Update Manager",
                     onClick = function()
-                        addTask(function()
+                        taskQueue.addTask(function()
                             loadingText:set("Updating manager...")
                             shell.run("manager/update.lua")
                         end)
@@ -367,19 +363,5 @@ local function workerStatusUpdateTask()
     end
 end
 
-local function taskWorker()
-    while true do
-        if #taskQueue > 0 then
-            local task = table.remove(taskQueue, 1)
-            local co = coroutine.create(task)
-            local ok, err = coroutine.resume(co)
-            if not ok then
-                printError("Task error: " .. tostring(err))
-            end
-        end
-        os.sleep(0.1) -- Prevent busy-waiting
-    end
-end
-
-parallel.waitForAll(composeAppTask, messageListenerTask, inputTask, saveStateTask, workerStatusUpdateTask, taskWorker,
-coroutineUtils.coroutineScheduler)
+parallel.waitForAll(composeAppTask, messageListenerTask, inputTask, saveStateTask, workerStatusUpdateTask,
+taskQueue.runTaskWorker, coroutineUtils.coroutineScheduler)

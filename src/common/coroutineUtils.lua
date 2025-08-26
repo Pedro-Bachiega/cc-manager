@@ -21,7 +21,7 @@ function M.coroutineScheduler()
                 end
             end
         end
-        os.sleep(0.1)
+        sleep(0.1)
     end
 end
 
