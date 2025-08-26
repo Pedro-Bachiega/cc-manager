@@ -6,15 +6,18 @@ local M = {}
 local availableRoles = {
     {
         name = "advanced_mob_farm_manager",
-        displayName = "Advanced Mob Farm Manager"
+        displayName = "Advanced Mob Farm Manager",
+        abbreviation = "AMFM"
     },
     {
         name = "mob_spawner_controller",
-        displayName = "Mob Spawner Controller"
+        displayName = "Mob Spawner Controller",
+        abbreviation = "MSC"
     },
     {
         name = "power_grid_monitor",
-        displayName = "Power Grid Monitor"
+        displayName = "Power Grid Monitor",
+        abbreviation = "PGM"
     }
 }
 
@@ -39,7 +42,7 @@ local function WorkerDetails(viewModel)
 
     local footer = nil
 
-    if role then -- Only show clear role if a role is assigned
+    if role then
         table.insert(actions, compose.Button({
             text = "Clear Role",
             onClick = function() viewModel:clearRoleForSelectedWorker() end
@@ -90,14 +93,51 @@ local function WorkerDetails(viewModel)
     })
 end
 
-local function MainScreen(viewModel)
+-- New MainScreen function (now primarily for the main content of the drawer)
+local function MainContent(viewModel, drawerOpen) -- Renamed from MainScreen to MainContent
+    local selectedId = viewModel.selectedWorkerId:get()
+    if selectedId then
+        return WorkerDetails(viewModel)
+    else
+        return compose.Column({
+            modifier = compose.Modifier:new():fillMaxSize(),
+            horizontalAlignment = compose.HorizontalAlignment.Center,
+            verticalArrangement = compose.Arrangement.Center
+        }, {
+            compose.Text({ text = "--- Manager Control Panel ---" }),
+            compose.Text({ text = "Listening on protocol: " .. protocol.id }),
+            compose.Text({ text = "-----------------------------" }),
+            compose.Spacer({ modifier = compose.Modifier:new():height(2) }),
+            compose.Text({ text = "Select a worker from the drawer" }),
+            compose.Spacer({ modifier = compose.Modifier:new():weight(1) }),
+            compose.Row({ modifier = compose.Modifier:new():fillMaxWidth() }, {
+                compose.Button({
+                    text = "Open Drawer",
+                    onClick = function() drawerOpen:set(true) end
+                }),
+                compose.Spacer({ modifier = compose.Modifier:new():height(2) }),
+                compose.Button({
+                    text = "Update Manager",
+                    onClick = function()
+                        viewModel.loadingText:set("Updating manager...")
+                        shell.run("manager/update.lua")
+                    end
+                })
+            })
+        })
+    end
+end
+
+--- New DrawerContent function
+--- @param viewModel ManagerViewModel
+--- @param drawerOpen State<boolean>
+local function DrawerContent(viewModel, drawerOpen)
     return compose.Column({
-        modifier = compose.Modifier:new():fillMaxSize(),
-        horizontalAlignment = compose.HorizontalAlignment.Center
+        modifier = compose.Modifier:new():fillMaxSize():background(colors.lightGray),
+        horizontalAlignment = compose.HorizontalAlignment.Start
     }, {
-        compose.Text({ text = "--- Manager Control Panel ---" }),
-        compose.Text({ text = "Listening on protocol: " .. protocol.id }),
-        compose.Text({ text = "-----------------------------" }),
+        compose.Text({ text = "--- Workers ---", textColor = colors.black }),
+        compose.Spacer({ modifier = compose.Modifier:new():height(1) }),
         viewModel.workers:get(function(w)
             local rows = {}
             for id, data in pairs(w) do
@@ -116,35 +156,43 @@ local function MainScreen(viewModel)
                     statusColor = colors.yellow
                 end
 
-                local roleInfo = viewModel.assignedRoles:get()[id] and
-                    ("Role: " .. viewModel.assignedRoles:get()[id].displayName) or ""
+                local role = viewModel.assignedRoles:get()[id]
+                local roleInfo = role and ("Role: " .. (role.abbreviation or "N/A")) or nil
                 table.insert(rows, compose.Column({
-                    modifier = compose.Modifier:new():clickable(function() viewModel:selectWorker(id) end)
-                }, {
-                    compose.Row({}, {
-                        compose.Text({ text = string.format("Worker %d: ", id) }),
-                        compose.Text({ text = status, textColor = statusColor })
-                    }),
-                    compose.Text({ text = roleInfo })
-                }))
+                    backgroundColor = statusColor,
+                    modifier = compose.Modifier:new():clickable(function()
+                        viewModel:selectWorker(id)
+                        drawerOpen:set(false)         -- Close drawer on worker selection
+                    end):fillMaxWidth():padding(1, 0) -- Add padding for better look
+                }, (function()
+                    local items = {
+                        compose.Text({ text = string.format("Worker %d", id), textColor = colors.black })
+                    }
+                    if roleInfo then
+                        table.insert(items, compose.Text({ text = roleInfo, textColor = colors.black }))
+                    end
+
+                    return items
+                end)()))
             end
 
             if #rows == 0 then
-                table.insert(rows, compose.Text({ text = "No workers connected." }))
+                table.insert(rows, compose.Text({ text = "No workers connected.", textColor = colors.black }))
             end
 
             return compose.Column({ modifier = compose.Modifier:new():weight(1) }, rows)
         end),
+        compose.Spacer({ modifier = compose.Modifier:new():height(1) }),
         compose.Button({
-            text = "Update Manager",
-            onClick = function()
-                viewModel.loadingText:set("Updating manager...")
-                shell.run("manager/update.lua")
-            end
+            text = "Close Drawer",
+            onClick = function() drawerOpen:set(false) end,
+            modifier = compose.Modifier:new():fillMaxWidth():background(colors.red)
         })
     })
 end
 
+--- New App function
+--- @param viewModel ManagerViewModel
 function M.App(viewModel)
     if viewModel.loadingText:get() then
         return compose.Column({
@@ -156,12 +204,14 @@ function M.App(viewModel)
         })
     end
 
-    local selectedId = viewModel.selectedWorkerId:get()
-    if selectedId then
-        return WorkerDetails(viewModel)
-    else
-        return MainScreen(viewModel)
-    end
+    local drawerOpen = compose.remember(true, "manager_drawer_open") -- State for drawer
+
+    return compose.NavigationDrawer({
+        drawerContent = DrawerContent(viewModel, drawerOpen),
+        content = MainContent(viewModel, drawerOpen),
+        isOpen = drawerOpen,
+        onClose = function() drawerOpen:set(false) end
+    })
 end
 
 return M

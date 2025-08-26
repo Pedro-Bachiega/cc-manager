@@ -3,11 +3,19 @@ local protocol = require("manager.src.common.protocol")
 local config = require("manager.src.common.config")
 local workerMessaging = require("manager.src.common.workerMessaging")
 
+--- @class RegistrationService
+--- @brief Handles the registration process for a worker computer with a manager computer.
+--- This service manages broadcasting registration requests, listening for manager responses,
+--- and persisting the manager's ID.
 local M = {}
 
--- How long to wait for a manager to respond to registration (in seconds)
+--- @private
+--- @brief How long to wait for a manager to respond to registration (in seconds).
 local registrationTimeout = 5
 
+--- Attempts to register the worker computer with a manager computer.
+-- It first checks for a saved manager ID, then broadcasts registration requests until a manager responds.
+--- @return number The ID of the registered manager computer.
 function M.registerWithManager()
     local managerId = nil
     network.open(protocol.id)

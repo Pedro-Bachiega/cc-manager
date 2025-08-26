@@ -4,9 +4,21 @@ local coroutineUtils = require("manager.src.common.coroutineUtils")
 local network = require("manager.src.common.network")
 local protocol = require("manager.src.common.protocol")
 
+--- @module ManagerViewModel
+--- @brief Manages the state and logic for the Manager computer's UI.
+--- This ViewModel interacts with the WorkerService to orchestrate worker computers,
+--- handle Rednet messages, and manage the application's UI state.
+
+--- @class ManagerViewModel
+--- @field workers State A Compose state object holding a table of worker data (id, status, last_heartbeat).
+--- @field assignedRoles State A Compose state object holding a table of assigned roles for workers (workerId -> role).
+--- @field selectedWorkerId State A Compose state object holding the ID of the currently selected worker.
+--- @field loadingText State A Compose state object holding text to display during loading operations.
 local M = {}
 M.__index = M
 
+--- Creates a new ManagerViewModel instance.
+--- @return ManagerViewModel A new instance of the ManagerViewModel.
 function M:new()
     local instance = setmetatable({}, M)
 
@@ -21,14 +33,19 @@ function M:new()
     return instance
 end
 
+--- Selects a worker by its ID.
+--- @param workerId number The ID of the worker to select.
 function M:selectWorker(workerId)
     self.selectedWorkerId:set(workerId)
 end
 
+--- Clears the currently selected worker.
 function M:clearSelection()
     self.selectedWorkerId:set(nil)
 end
 
+--- Assigns a role to the currently selected worker.
+--- @param role table The role to assign. Expected to have a 'name' field.
 function M:assignRole(role)
     local workerId = self.selectedWorkerId:get()
     if not workerId then return end
@@ -40,6 +57,7 @@ function M:assignRole(role)
     self:clearSelection()
 end
 
+--- Updates the currently selected worker by sending an update command.
 function M:updateSelectedWorker()
     local workerId = self.selectedWorkerId:get()
     if not workerId then return end
@@ -64,6 +82,7 @@ function M:updateSelectedWorker()
     )
 end
 
+--- Clears the assigned role for the currently selected worker.
 function M:clearRoleForSelectedWorker()
     local workerId = self.selectedWorkerId:get()
     if not workerId then return end
@@ -91,6 +110,7 @@ function M:clearRoleForSelectedWorker()
     )
 end
 
+--- Toggles the state (e.g., on/off) for the currently selected worker's assigned role.
 function M:toggleStateForSelectedWorker()
     local workerId = self.selectedWorkerId:get()
     if not workerId then return end
@@ -117,6 +137,9 @@ function M:toggleStateForSelectedWorker()
     )
 end
 
+--- Handles incoming Rednet messages, updating worker status and handling registration.
+--- @param senderId number The ID of the computer that sent the message.
+--- @param message table The received message, expected to have a 'type' field.
 function M:handleRednetMessage(senderId, message)
     if not message or not message.type then return end
 
@@ -143,6 +166,9 @@ function M:handleRednetMessage(senderId, message)
     self.workers:set(currentWorkers)
 end
 
+--- Updates the status of workers based on a disconnect timeout.
+-- Workers that haven't sent a heartbeat within the timeout are marked as 'disconnected'.
+--- @param disconnectTimeout number The time in seconds after which a worker is considered disconnected.
 function M:updateWorkerStatus(disconnectTimeout)
     local currentWorkers = self.workers:get()
     local updated = false
@@ -157,6 +183,7 @@ function M:updateWorkerStatus(disconnectTimeout)
     end
 end
 
+--- Saves the current state of workers to persistent storage.
 function M:saveState()
     workerService.saveWorkersState(self.workers:get())
 end

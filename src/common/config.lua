@@ -4,7 +4,7 @@ local config = {}
 local configFilePath = "config.json"
 
 --- Loads configuration from the config.json file.
--- @return table The loaded configuration, or an empty table if the file doesn't exist or is invalid.
+--- @return table The loaded configuration, or an empty table if the file doesn't exist or is invalid.
 function config.load()
     if fs.exists(configFilePath) then
         local file = fs.open(configFilePath, "r")
@@ -23,7 +23,7 @@ function config.load()
 end
 
 --- Saves configuration to the config.json file.
--- @param data table The table to save as configuration.
+--- @param data table The table to save as configuration.
 function config.save(data)
     local content = textutils.serializeJSON(data)
     local file = fs.open(configFilePath, "w")
