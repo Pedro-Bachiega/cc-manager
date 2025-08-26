@@ -10,9 +10,15 @@ end
 
 local role = args[1]
 
+local function setupGitClone()
+    if not fs.exists("gitClone.lua") then
+        shell.run("pastebin", "get", "MViDbkcX", "gitClone.lua")
+    end
+end
+
 local function clone(url, targetDir)
     print("Cloning GitHub repository '" .. url .. "' into '" .. targetDir .. "' using Pastebin script...")
-    local success, output = shell.run("pastebin", "run", "MViDbkcX", url, targetDir)
+    local success, output = shell.run("gitClone", url, targetDir)
 
     if not success then
         error("GitHub cloning failed: " .. tostring(output))
@@ -34,6 +40,8 @@ local function deleteDir(path)
         end
     end
 end
+
+setupGitClone()
 
 local successManager, outputManager = pcall(clone, "https://github.com/Pedro-Bachiega/cc-manager", managerTmpDir)
 local successCompose, outputCompose = pcall(clone, "https://github.com/Pedro-Bachiega/cc-compose", composeTmpDir)
