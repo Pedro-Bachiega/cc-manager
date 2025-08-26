@@ -107,6 +107,12 @@ function M.start(options)
                     cfg.secondaryRole = nil
                     config.save(cfg)
                     M.setStatus("idle")
+                    -- Send success reply before rebooting
+                    network.send(replyChannel, os.getComputerID(), {
+                        isReply = true,
+                        replyTo = msg.requestId,
+                        payload = { status = "success" }
+                    })
                     print("Role cleared by manager. Rebooting.")
                     os.reboot()
                 elseif msg and msg.type == "COMMAND" and msg.command == "update" then
@@ -119,7 +125,7 @@ function M.start(options)
                     print("Role updated to: " .. msg.role.displayName .. ". Rebooting.")
                     os.reboot()
                 elseif messageHandler then
-                    messageHandler(msg)
+                    messageHandler(msg, replyChannel)
                 end
             end
         end

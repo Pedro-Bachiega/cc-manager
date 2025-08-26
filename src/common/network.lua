@@ -77,16 +77,19 @@ function network.dispatch(senderId, message)
     return false
 end
 
---- Checks for timed out requests. Should be called periodically.
-function network.update()
-    local now = os.time()
-    for requestId, request in pairs(pending_requests) do
-        if now >= request.timeoutAt then
-            if request.onTimeout then
-                request.onTimeout()
+--- Checks for timed out requests. Should be called registered.
+function network.runUpdateTask()
+    while true do
+        local now = os.time()
+        for requestId, request in pairs(pending_requests) do
+            if now >= request.timeoutAt then
+                if request.onTimeout then
+                    request.onTimeout()
+                end
+                pending_requests[requestId] = nil
             end
-            pending_requests[requestId] = nil
         end
+        sleep(0.1)
     end
 end
 

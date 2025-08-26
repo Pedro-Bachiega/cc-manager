@@ -90,12 +90,11 @@ local function assignRoleToWorker(targetId, role)
 end
 
 local function handleRednetMessage(senderId, message)
-    local msg = protocol.deserialize(message)
-    if not msg or not msg.type then return end
+    if not message or not message.type then return end
 
     local currentWorkers = workers:get()
 
-    if msg.type == "REGISTER" then
+    if message.type == "REGISTER" then
         currentWorkers[senderId] = { id = senderId, status = "online", last_heartbeat = os.time() }
         network.send(senderId, os.getComputerID(), protocol.serialize({ type = "REGISTER_OK" }))
         local assignedRole = assignedRoles[senderId]
@@ -105,12 +104,12 @@ local function handleRednetMessage(senderId, message)
                 role = assignedRole
             })
         end
-    elseif msg.type == "HEARTBEAT" then
+    elseif message.type == "HEARTBEAT" then
         if currentWorkers[senderId] then
-            currentWorkers[senderId].status = msg.status or "online"
+            currentWorkers[senderId].status = message.status or "online"
             currentWorkers[senderId].last_heartbeat = os.time()
         end
-    elseif msg.type == "TASK_RESULT" then
+    elseif message.type == "TASK_RESULT" then
         if currentWorkers[senderId] then
             currentWorkers[senderId].status = "idle"
         end
@@ -130,12 +129,26 @@ local function WorkerDetails(worker, role)
         text = "Update Worker",
         onClick = function()
             loadingText:set("Updating worker...")
-            taskQueue.addTask(function()
-                network.send(worker.id, os.getComputerID(), { type = "COMMAND", command = "update" })
-                coroutineUtils.delay(1)
-                loadingText:set(nil)
-                selectedWorkerId:set(nil)
-            end)
+            network.request(
+                worker.id,
+                os.getComputerID(),
+                { type = "COMMAND", command = "update" },
+                function(senderId, payload) -- onSuccess
+                    if payload.status == "success" then
+                        loadingText:set("Worker updated.")
+                        selectedWorkerId:set(nil)
+                    else
+                        loadingText:set("Error: " .. (payload.message or "Unknown"))
+                    end
+                    coroutineUtils.delay(1)
+                    loadingText:set(nil)
+                end,
+                function() -- onTimeout
+                    loadingText:set("Error: Request timed out.")
+                    coroutineUtils.delay(1)
+                    loadingText:set(nil)
+                end
+            )
         end
     }))
 
@@ -146,13 +159,28 @@ local function WorkerDetails(worker, role)
             text = "Clear Role",
             onClick = function()
                 loadingText:set("Clearing role...")
-                taskQueue.addTask(function()
-                    network.send(worker.id, os.getComputerID(), { type = "COMMAND", command = "clear_role" })
-                    assignedRoles[worker.id] = nil
-                    saveAssignedRoles()
-                    loadingText:set(nil)
-                    selectedWorkerId:set(nil)
-                end)
+                network.request(
+                    worker.id,
+                    os.getComputerID(),
+                    { type = "COMMAND", command = "clear_role" },
+                    function(senderId, payload) -- onSuccess
+                        if payload.status == "success" then
+                            assignedRoles[worker.id] = nil
+                            saveAssignedRoles()
+                            loadingText:set("Role cleared.")
+                            selectedWorkerId:set(nil)
+                        else
+                            loadingText:set("Error: " .. (payload.message or "Unknown"))
+                        end
+                        coroutineUtils.delay(1)
+                        loadingText:set(nil)
+                    end,
+                    function() -- onTimeout
+                        loadingText:set("Error: Request timed out.")
+                        coroutineUtils.delay(1)
+                        loadingText:set(nil)
+                    end
+                )
             end
         }))
 
@@ -161,14 +189,26 @@ local function WorkerDetails(worker, role)
                 text = "Toggle State",
                 onClick = function()
                     loadingText:set("Toggling state...")
-                    taskQueue.addTask(function()
-                        print("Toggling state for worker " .. worker.id)
-                        network.send(worker.id, os.getComputerID(), { role = role.name, command = "toggle_state" })
-                        print("Delaying for 1 second")
-                        coroutineUtils.delay(1)
-                        print("Toggled state for worker " .. worker.id)
-                        loadingText:set(nil)
-                    end)
+                    network.request(
+                        worker.id,
+                        os.getComputerID(),
+                        { role = role.name, command = "toggle_state" },
+                        function(senderId, payload) -- onSuccess
+                            if payload.status == "success" then
+                                loadingText:set("State toggled.")
+                            else
+                                loadingText:set("Error: " .. (payload.message or "Unknown"))
+                            end
+
+                            coroutineUtils.delay(1)
+                            loadingText:set(nil)
+                        end,
+                        function() -- onTimeout
+                            loadingText:set("Error: Request timed out.")
+                            coroutineUtils.delay(1)
+                            loadingText:set(nil)
+                        end
+                    )
                 end
             }))
         end
@@ -319,9 +359,13 @@ local function messageListenerTask()
         local event, p1, p2, p3, p4, p5, p6 = os.pullEvent()                              -- Get all events
         if event == "modem_message" then
             local side, channel, replyChannel, message_raw, distance = p1, p2, p3, p4, p5 -- Map to user's desired names
-            local message = textutils.unserializeJSON(message_raw)                        -- Deserialize the message
-            -- No protocol check needed here
-            handleRednetMessage(replyChannel, message)
+            local message = protocol.deserialize(message_raw)                        -- Deserialize the message
+            -- Try to dispatch as a reply first
+            local wasReply = network.dispatch(replyChannel, message)
+            if not wasReply then
+                -- If it wasn't a reply, handle as a regular message
+                handleRednetMessage(replyChannel, message)
+            end
         end
     end
 end
@@ -367,4 +411,4 @@ local function workerStatusUpdateTask()
 end
 
 parallel.waitForAll(composeAppTask, messageListenerTask, inputTask, saveStateTask, workerStatusUpdateTask,
-taskQueue.runTaskWorker, coroutineUtils.coroutineScheduler)
+taskQueue.runTaskWorker, coroutineUtils.coroutineScheduler, network.runUpdateTask)

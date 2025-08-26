@@ -2,6 +2,7 @@
 
 local compose = require("compose.src.compose")
 local coroutineUtils = require("manager.src.common.coroutineUtils")
+local network = require("manager.src.common.network")
 local taskQueue = require("manager.src.common.taskQueue")
 local ui = require("manager.src.common.ui")
 local workerMessaging = require("manager.src.common.workerMessaging")
@@ -23,8 +24,8 @@ local function setSpawnerState(enabled)
 end
 
 local function toggleSpawner()
+    loadingText:set("Toggling spawner...")
     taskQueue.addTask(function()
-        loadingText:set("Toggling spawner...")
         local newStatus = not spawnerEnabled:get()
         setSpawnerState(newStatus)
         coroutineUtils.delay(1)
@@ -95,10 +96,14 @@ function M.run()
         compose.render(App, monitor)
     end
 
-    local function messageHandler(message)
+    local function messageHandler(message, replyChannel)
         if message.role == "mob_spawner_controller" and message.command == "toggle_state" then
             toggleSpawner()
-            print("Toggled spawner state to: " .. tostring(spawnerEnabled:get()))
+            network.send(replyChannel, os.getComputerID(), {
+                isReply = true,
+                replyTo = message.requestId,
+                payload = { status = "success" }
+            })
         end
     end
 

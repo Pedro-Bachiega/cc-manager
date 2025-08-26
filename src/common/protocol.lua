@@ -8,11 +8,13 @@ protocol.name = "cc_manager_net"
 protocol.id = 12345
 
 --- Helper function to safely encode a Lua table into a JSON string.
+--- @return string
 function protocol.serialize(data)
     return textutils.serializeJSON(data)
 end
 
 --- Helper function to safely decode a JSON string into a Lua table.
+--- @return table|nil
 function protocol.deserialize(text)
     local ok, data = pcall(textutils.unserializeJSON, text)
     if ok then
