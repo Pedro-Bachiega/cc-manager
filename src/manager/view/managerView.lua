@@ -78,7 +78,7 @@ local function WorkerDetails(viewModel)
         })
     end
 
-    return compose.Column({ modifier = compose.Modifier:new():fillMaxSize() }, {
+    return compose.Column({ modifier = compose.Modifier:new():fillMaxSize():padding(1) }, {
         compose.Button({
             text = "Back",
             backgroundColor = colors.red,
@@ -100,7 +100,7 @@ local function MainContent(viewModel, drawerOpen) -- Renamed from MainScreen to 
         return WorkerDetails(viewModel)
     else
         return compose.Column({
-            modifier = compose.Modifier:new():fillMaxSize(),
+            modifier = compose.Modifier:new():fillMaxSize():padding(1),
             horizontalAlignment = compose.HorizontalAlignment.Center,
             verticalArrangement = compose.Arrangement.Center
         }, {
@@ -133,7 +133,7 @@ end
 --- @param drawerOpen State<boolean>
 local function DrawerContent(viewModel, drawerOpen)
     return compose.Column({
-        modifier = compose.Modifier:new():fillMaxSize():background(colors.lightGray),
+        modifier = compose.Modifier:new():fillMaxSize():background(colors.lightGray):padding(1),
         horizontalAlignment = compose.HorizontalAlignment.Start
     }, {
         compose.Text({ text = "--- Workers ---", textColor = colors.black }),
@@ -141,18 +141,13 @@ local function DrawerContent(viewModel, drawerOpen)
         viewModel.workers:get(function(w)
             local rows = {}
             for id, data in pairs(w) do
-                local status = data.status
                 local statusColor = colors.white
 
-                if status == "online" then
-                    status = "healthy"
-                end
-
-                if status == "healthy" then
+                if data.status == "online" then
                     statusColor = colors.green
-                elseif status == "timed out" then
+                elseif data.status == "timed out" then
                     statusColor = colors.red
-                elseif status == "idle" then
+                elseif data.status == "idle" then
                     statusColor = colors.yellow
                 end
 
@@ -162,8 +157,8 @@ local function DrawerContent(viewModel, drawerOpen)
                     backgroundColor = statusColor,
                     modifier = compose.Modifier:new():clickable(function()
                         viewModel:selectWorker(id)
-                        drawerOpen:set(false)         -- Close drawer on worker selection
-                    end):fillMaxWidth():padding(1, 0) -- Add padding for better look
+                        drawerOpen:set(false)
+                    end):fillMaxWidth()
                 }, (function()
                     local items = {
                         compose.Text({ text = string.format("Worker %d", id), textColor = colors.black })
